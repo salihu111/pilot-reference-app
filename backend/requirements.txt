@@ -3,7 +3,7 @@ uvicorn[standard]==0.30.6
 python-multipart==0.0.9
 pymupdf>=1.24.0
 fastembed>=0.7.0
-numpy==1.26.4
+numpy>=2.1.0
 groq==0.11.0
 httpx<0.28
 python-telegram-bot==21.6
