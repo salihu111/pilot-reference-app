@@ -1,0 +1,1007 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+<title>Pilot Reference</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.24.7/babel.min.js"></script>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  :root{
+    --bg:#0a0e14; --bg2:#0d1420; --panel:#111a26; --panel2:#0d1520;
+    --border:#1e2a3a; --border-hi:#2a3a4f;
+    --text:#e7edf5; --muted:#8493a6; --muted2:#5c6b80;
+    --accent:#3b82f6; --accent2:#22d3ee; --accent-soft:#12233d;
+    --vfr:#22c55e; --mvfr:#3b82f6; --ifr:#ef4444; --lifr:#d946ef;
+  }
+  *{box-sizing:border-box;}
+  body{
+    background:
+      radial-gradient(1100px 500px at 15% -10%, rgba(59,130,246,0.16), transparent 60%),
+      radial-gradient(900px 500px at 110% 0%, rgba(34,211,238,0.10), transparent 55%),
+      var(--bg);
+    background-attachment:fixed;
+    color:var(--text);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+    -webkit-tap-highlight-color:transparent;
+  }
+  ::-webkit-scrollbar{width:6px;height:6px;} ::-webkit-scrollbar-thumb{background:#25324399;border-radius:3px;}
+  .glass{ background:linear-gradient(180deg, rgba(255,255,255,0.035), rgba(255,255,255,0.01)), var(--panel);
+    border:1px solid var(--border); }
+  .glass-hi{ border-color:var(--border-hi); }
+  @keyframes spin{ to{ transform:rotate(360deg); } }
+  .spin{ animation:spin 0.9s linear infinite; }
+  @keyframes fadeUp{ from{opacity:0; transform:translateY(6px);} to{opacity:1; transform:translateY(0);} }
+  .fade-up{ animation:fadeUp .25s ease-out; }
+  @keyframes pulseDot{ 0%,100%{opacity:1;} 50%{opacity:.35;} }
+  .pulse-dot{ animation:pulseDot 1.6s ease-in-out infinite; }
+  .mono{ font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; }
+  .skel{ background:linear-gradient(90deg, #14202f 25%, #1b2a3d 37%, #14202f 63%); background-size:400% 100%;
+    animation:skel 1.4s ease infinite; border-radius:8px; }
+  @keyframes skel{ 0%{background-position:100% 50%;} 100%{background-position:0 50%;} }
+  input,textarea{ color:var(--text); }
+  input::placeholder,textarea::placeholder{ color:var(--muted2); }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel" data-presets="react">
+
+const { useState, useEffect, useRef, useMemo } = React;
+
+// Same-origin by default -- works with no editing needed regardless of
+// your Railway domain, since the frontend is served by the same FastAPI app.
+const API = window.API_BASE || (window.location.origin + "/api");
+const ORIGIN = window.location.origin;
+
+function tg() { return window.Telegram ? window.Telegram.WebApp : null; }
+
+/* ---------------------------------------------------------------------- */
+/* Icons -- small hand-rolled stroke icons, no external icon font needed  */
+/* ---------------------------------------------------------------------- */
+
+function Icon({ children, size=18, className="", strokeWidth=1.8 }) {
+  return (
+    <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke="currentColor"
+      strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round" className={className}>
+      {children}
+    </svg>
+  );
+}
+const IPlane = (p) => <Icon {...p}><path d="M12 2l3 7h6l-5 4 2 7-6-4-6 4 2-7-5-4h6z" opacity="0"/><path d="M2.5 12.5l7-2 4-7 1.6 1-2.7 6.7 5.6 1.9v1.6l-5.9-1L11 19l2 1.3-.5 1.2-3.3-1-1 2.5H7l.6-3-3-.9-.6-2 3.4.4 1.4-3.4-6.3-2z"/></Icon>;
+const IWind = (p) => <Icon {...p}><path d="M3 8h10.5a2.5 2.5 0 1 0-2.4-3.2"/><path d="M3 12h15.5a2.5 2.5 0 1 1-2.4 3.2"/><path d="M3 16h8.5a2 2 0 1 1-1.9 2.6"/></Icon>;
+const ICloud = (p) => <Icon {...p}><path d="M7 18a4 4 0 1 1 .7-7.94A5 5 0 0 1 17 12a3.5 3.5 0 0 1-.5 6.98"/></Icon>;
+const IGauge = (p) => <Icon {...p}><circle cx="12" cy="13" r="7"/><path d="M12 13l3-3"/><path d="M9 4h6"/></Icon>;
+const IThermo = (p) => <Icon {...p}><path d="M10 14.76V4a2 2 0 0 1 4 0v10.76a4 4 0 1 1-4 0z"/></Icon>;
+const IEye = (p) => <Icon {...p}><path d="M1.5 12S5 5 12 5s10.5 7 10.5 7-3.5 7-10.5 7S1.5 12 1.5 12z"/><circle cx="12" cy="12" r="3"/></Icon>;
+const IAlert = (p) => <Icon {...p}><path d="M10.3 3.9L1.9 18a1.8 1.8 0 0 0 1.5 2.7h17.2a1.8 1.8 0 0 0 1.5-2.7L13.7 3.9a1.8 1.8 0 0 0-3.4 0z"/><path d="M12 9v4.5"/><circle cx="12" cy="16.7" r="0.9" fill="currentColor" stroke="none"/></Icon>;
+const IRefresh = (p) => <Icon {...p}><path d="M20 11A8 8 0 1 0 6.3 17.7"/><path d="M20 5v6h-6"/></Icon>;
+const IChevDown = (p) => <Icon {...p}><path d="M6 9l6 6 6-6"/></Icon>;
+const ISearch = (p) => <Icon {...p}><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></Icon>;
+const IPlus = (p) => <Icon {...p}><path d="M12 5v14M5 12h14"/></Icon>;
+const IMapPin = (p) => <Icon {...p}><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 1 1 16 0z"/><circle cx="12" cy="10" r="2.6"/></Icon>;
+const IFile = (p) => <Icon {...p}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></Icon>;
+const IChat = (p) => <Icon {...p}><path d="M21 12a8 8 0 1 1-3.4-6.6L21 4l-1 3.6A7.96 7.96 0 0 1 21 12z" opacity="0"/><path d="M4 4h16v11H8l-4 4V4z"/></Icon>;
+const IShield = (p) => <Icon {...p}><path d="M12 2l8 3.5v6c0 5-3.4 8.4-8 10.5-4.6-2.1-8-5.5-8-10.5v-6L12 2z"/><path d="M9 12l2 2 4-4.5"/></Icon>;
+const IRoute = (p) => <Icon {...p}><circle cx="5" cy="6" r="2.3"/><circle cx="19" cy="18" r="2.3"/><path d="M6.8 7.6C10 11 14 13 17.2 16.4"/></Icon>;
+const IBell = (p) => <Icon {...p}><path d="M6 9a6 6 0 0 1 12 0c0 5 2 6 2 6H4s2-1 2-6z"/><path d="M10 20a2 2 0 0 0 4 0"/></Icon>;
+const IDollar = (p) => <Icon {...p}><circle cx="12" cy="12" r="9.5"/><path d="M12 6v12M15 9.2c0-1.2-1.3-2.2-3-2.2s-3 1-3 2.3c0 3 6 1.5 6 4.5 0 1.3-1.3 2.2-3 2.2s-3-1-3-2.2"/></Icon>;
+const ISend = (p) => <Icon {...p}><path d="M22 2L11 13"/><path d="M22 2l-7 20-4-9-9-4 20-7z"/></Icon>;
+const IX = (p) => <Icon {...p}><path d="M18 6L6 18M6 6l12 12"/></Icon>;
+const IClock = (p) => <Icon {...p}><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/></Icon>;
+const ITelegram = (p) => <Icon {...p} strokeWidth={0}><path fill="currentColor" d="M21.8 4.1L2.6 11.6c-1.3.5-1.3 1.2-.2 1.6l4.9 1.5 1.9 5.8c.2.6.4.8.9.8.5 0 .7-.2 1-.5l2.4-2.3 5 3.6c.9.5 1.5.2 1.8-.9L23.9 5.5c.4-1.4-.5-2-1.5-1.4zM8.3 13.9L18 7.6c.5-.3.9-.1.6.3L10.9 15c-.3.3-.5.5-.6 1l-.2 3-1-3.6c-.2-.6 0-.9.2-1.5z"/></Icon>;
+
+/* ---------------------------------------------------------------------- */
+/* Small shared bits                                                      */
+/* ---------------------------------------------------------------------- */
+
+function cx(...a){ return a.filter(Boolean).join(" "); }
+
+function timeAgo(ts) {
+  if (!ts) return null;
+  let d;
+  if (ts === "now") d = new Date();
+  else {
+    const iso = typeof ts === "string" && !ts.includes("T") ? ts.replace(" ", "T") + "Z" : ts;
+    d = new Date(iso);
+  }
+  if (isNaN(d.getTime())) return null;
+  const s = Math.max(0, Math.round((Date.now() - d.getTime()) / 1000));
+  if (s < 5) return "just now";
+  if (s < 60) return `${s}s ago`;
+  const m = Math.round(s / 60);
+  if (m < 60) return `${m}m ago`;
+  const h = Math.round(m / 60);
+  if (h < 24) return `${h}h ago`;
+  return `${Math.round(h / 24)}d ago`;
+}
+
+function Badge({ children, color = "#2a3a4f", bg, className = "" }) {
+  return (
+    <span
+      className={cx("inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide px-2 py-0.5 rounded-full border", className)}
+      style={{ color, borderColor: color + "55", background: bg || (color + "18") }}>
+      {children}
+    </span>
+  );
+}
+
+function Card({ children, className = "", hi=false }) {
+  return <div className={cx("glass", hi && "glass-hi", "rounded-2xl p-4 shadow-[0_1px_0_rgba(255,255,255,0.03)_inset]", className)}>{children}</div>;
+}
+
+function Spinner({ size=14 }) {
+  return <IRefresh size={size} className="spin text-[#6b7885]" />;
+}
+
+function SectionLabel({ children, icon }) {
+  return (
+    <div className="flex items-center gap-1.5 text-[11px] uppercase tracking-wide text-[#6b7885] mb-2 font-medium">
+      {icon}{children}
+    </div>
+  );
+}
+
+function EmptyState({ children }) {
+  return <div className="text-sm text-[#6b7885] py-6 text-center">{children}</div>;
+}
+
+/* ---------------------------------------------------------------------- */
+/* Nav                                                                    */
+/* ---------------------------------------------------------------------- */
+
+const TABS = [
+  { id: "Ask", icon: IChat },
+  { id: "Documents", icon: IFile },
+  { id: "Legality", icon: IShield },
+  { id: "Airports", icon: IMapPin },
+  { id: "Escape Routes", icon: IRoute },
+  { id: "Bulletins", icon: IBell },
+  { id: "Salary", icon: IDollar },
+];
+
+function Header({ inTelegram }) {
+  return (
+    <div className="px-4 pt-4 pb-2 flex items-center justify-between">
+      <div className="flex items-center gap-2.5">
+        <div className="w-9 h-9 rounded-xl grid place-items-center bg-gradient-to-br from-[#3b82f6] to-[#22d3ee] shadow-lg shadow-blue-500/20">
+          <IPlane size={18} className="text-white" strokeWidth={0} />
+        </div>
+        <div>
+          <div className="text-[15px] font-semibold leading-tight">Pilot Reference</div>
+          <div className="text-[11px] text-[#5c6b80] leading-tight">Ops dashboard</div>
+        </div>
+      </div>
+      <Badge color={inTelegram ? "#22d3ee" : "#5c6b80"}>
+        <ITelegram size={11}/> {inTelegram ? "Telegram" : "Browser"}
+      </Badge>
+    </div>
+  );
+}
+
+function Nav({ tab, setTab }) {
+  return (
+    <div className="flex gap-1.5 overflow-x-auto px-3 pb-3 pt-1 sticky top-0 z-20"
+      style={{ background: "linear-gradient(180deg, var(--bg) 60%, transparent)" }}>
+      {TABS.map(({ id, icon: I }) => (
+        <button key={id} onClick={() => setTab(id)}
+          className={cx(
+            "flex items-center gap-1.5 px-3 py-2 rounded-xl text-[13px] font-medium whitespace-nowrap transition-all border",
+            tab === id
+              ? "bg-gradient-to-b from-[#3b82f6] to-[#2563eb] text-white border-transparent shadow-md shadow-blue-500/25"
+              : "bg-[#111a26] text-[#8493a6] border-[#1e2a3a] hover:border-[#2a3a4f]"
+          )}>
+          <I size={14} />{id}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/* ---------------------------------------------------------------------- */
+/* Ask                                                                    */
+/* ---------------------------------------------------------------------- */
+
+function AskTab() {
+  const [docs, setDocs] = useState([]);
+  const [selected, setSelected] = useState([]);
+  const [query, setQuery] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [result, setResult] = useState(null);
+  const [activeCitation, setActiveCitation] = useState(null);
+
+  useEffect(() => { fetch(`${API}/documents`).then(r=>r.json()).then(setDocs).catch(()=>{}); }, []);
+
+  const toggleDoc = (id) => setSelected(s => s.includes(id) ? s.filter(x=>x!==id) : [...s, id]);
+
+  const ask = async () => {
+    if (!query.trim()) return;
+    setLoading(true); setResult(null); setActiveCitation(null);
+    const form = new FormData();
+    form.append("query", query);
+    if (selected.length) form.append("doc_ids", selected.join(","));
+    try {
+      const res = await fetch(`${API}/ask`, { method: "POST", body: form });
+      setResult(await res.json());
+    } catch (e) { setResult({ answer: "Request failed: " + e.message, citations: [] }); }
+    setLoading(false);
+  };
+
+  return (
+    <div className="grid md:grid-cols-2 gap-3 p-3 fade-up">
+      <Card>
+        <SectionLabel icon={<IFile size={12}/>}>Search scope</SectionLabel>
+        <div className="flex flex-wrap gap-2 mb-3">
+          {docs.map(d => (
+            <button key={d.id} onClick={()=>toggleDoc(d.id)}
+              className={cx("text-xs px-2.5 py-1 rounded-lg border transition",
+                selected.includes(d.id) ? "border-[#3b82f6] bg-[#12233d] text-[#8fb8ff]" : "border-[#1e2a3a] text-[#6b7885] hover:border-[#2a3a4f]")}>
+              {d.title || d.filename}
+            </button>
+          ))}
+          {docs.length===0 && <div className="text-sm text-[#6b7885]">Upload PDFs in the Documents tab first.</div>}
+        </div>
+        <div className="text-[10px] text-[#5c6b80] mb-3">
+          {selected.length===0 ? "Searching across ALL uploaded documents." : `Searching ${selected.length} selected document(s).`}
+        </div>
+        <textarea value={query} onChange={e=>setQuery(e.target.value)} rows={3}
+          placeholder="e.g. What is the MEL dispatch limit for the APU?"
+          className="w-full bg-[#0b1119] border border-[#1e2a3a] rounded-xl p-3 text-sm outline-none focus:border-[#3b82f6] transition" />
+        <button onClick={ask} disabled={loading}
+          className="mt-2.5 w-full bg-gradient-to-b from-[#3b82f6] to-[#2563eb] hover:brightness-110 text-white text-sm font-medium py-2.5 rounded-xl disabled:opacity-50 flex items-center justify-center gap-2 transition">
+          {loading ? <><Spinner/> Searching…</> : <><ISend size={14}/> Ask</>}
+        </button>
+      </Card>
+
+      <Card>
+        <SectionLabel icon={<IChat size={12}/>}>Answer</SectionLabel>
+        {!result && <EmptyState>Answer and page citations will appear here.</EmptyState>}
+        {result && (
+          <div className="fade-up">
+            <div className="text-sm whitespace-pre-wrap leading-relaxed mb-3">{result.answer}</div>
+            {result.citations && result.citations.length > 0 && (
+              <>
+                <SectionLabel>Citations</SectionLabel>
+                <div className="flex flex-col gap-2">
+                  {result.citations.map((c,i) => (
+                    <button key={i} onClick={()=>setActiveCitation(c)}
+                      className="text-left text-xs border border-[#1e2a3a] rounded-xl p-2.5 hover:border-[#3b82f6] transition">
+                      <div className="font-medium text-[#8fb8ff]">{c.title} — p.{c.page}</div>
+                      <div className="text-[#9aa7b3] mt-1 line-clamp-2">{c.excerpt}</div>
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
+        )}
+        {activeCitation && (
+          <div className="mt-3 border-t border-[#1e2a3a] pt-3 fade-up">
+            <SectionLabel>Page {activeCitation.page} preview</SectionLabel>
+            <img
+              src={`${API}/documents/${activeCitation.doc_id}/page/${activeCitation.page}/screenshot?highlight=${encodeURIComponent(activeCitation.excerpt.slice(0,60))}`}
+              className="w-full rounded-xl border border-[#1e2a3a]" />
+          </div>
+        )}
+      </Card>
+    </div>
+  );
+}
+
+/* ---------------------------------------------------------------------- */
+/* Documents                                                              */
+/* ---------------------------------------------------------------------- */
+
+function DocumentsTab() {
+  const [docs, setDocs] = useState([]);
+  const [uploading, setUploading] = useState(false);
+  const load = () => fetch(`${API}/documents`).then(r=>r.json()).then(setDocs).catch(()=>{});
+  useEffect(load, []);
+
+  const onFile = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    setUploading(true);
+    const form = new FormData();
+    form.append("file", file);
+    form.append("title", file.name.replace(/\.pdf$/i,""));
+    await fetch(`${API}/documents/upload`, { method:"POST", body: form });
+    setUploading(false);
+    load();
+  };
+
+  return (
+    <div className="p-3 fade-up">
+      <Card>
+        <SectionLabel icon={<IFile size={12}/>}>Upload a manual</SectionLabel>
+        <div className="text-sm text-[#9aa7b3] mb-3">FOM, FCOM, QRH, DDG, FRM, etc. — gets embedded and indexed for search across all tabs.</div>
+        <label className="flex items-center justify-center gap-2 border-2 border-dashed border-[#1e2a3a] hover:border-[#3b82f6] rounded-xl py-6 cursor-pointer transition text-sm text-[#6b7885]">
+          <IPlus size={16}/> Choose a PDF
+          <input type="file" accept="application/pdf" onChange={onFile} className="hidden" />
+        </label>
+        {uploading && <div className="text-xs text-[#8fb8ff] mt-2 flex items-center gap-1.5"><Spinner/> Indexing… this can take a minute for large manuals.</div>}
+      </Card>
+      <div className="grid md:grid-cols-2 gap-3 mt-3">
+        {docs.map(d => (
+          <Card key={d.id} className="flex items-start gap-3">
+            <div className="w-9 h-9 rounded-lg bg-[#12233d] grid place-items-center shrink-0"><IFile size={16} className="text-[#8fb8ff]"/></div>
+            <div className="min-w-0">
+              <div className="font-medium text-sm truncate">{d.title}</div>
+              <div className="text-xs text-[#6b7885] mt-1">{d.num_pages} pages · uploaded {d.uploaded_at}</div>
+            </div>
+          </Card>
+        ))}
+        {docs.length===0 && <EmptyState>No documents uploaded yet.</EmptyState>}
+      </div>
+    </div>
+  );
+}
+
+/* ---------------------------------------------------------------------- */
+/* Legality                                                               */
+/* ---------------------------------------------------------------------- */
+
+function LegalityTab() {
+  const [desc, setDesc] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [result, setResult] = useState(null);
+
+  const check = async () => {
+    if (!desc.trim()) return;
+    setLoading(true); setResult(null);
+    const form = new FormData();
+    form.append("duty_description", desc);
+    const res = await fetch(`${API}/legal-check`, { method:"POST", body: form });
+    setResult(await res.json());
+    setLoading(false);
+  };
+
+  return (
+    <div className="p-3 grid md:grid-cols-2 gap-3 fade-up">
+      <Card>
+        <SectionLabel icon={<IShield size={12}/>}>Duty / FTL cross-check</SectionLabel>
+        <textarea value={desc} onChange={e=>setDesc(e.target.value)} rows={5}
+          placeholder="e.g. Report 03:00L, 4 sectors, last sector ETA 14:30L, previous rest was 10h at home base…"
+          className="w-full bg-[#0b1119] border border-[#1e2a3a] rounded-xl p-3 text-sm outline-none focus:border-[#3b82f6] transition" />
+        <button onClick={check} disabled={loading}
+          className="mt-2.5 w-full bg-gradient-to-b from-[#3b82f6] to-[#2563eb] text-white text-sm font-medium py-2.5 rounded-xl disabled:opacity-50 flex items-center justify-center gap-2 transition">
+          {loading ? <><Spinner/> Checking…</> : "Check against my FRM/FOM"}
+        </button>
+        <div className="text-[10px] text-[#5c6b80] mt-2.5 flex items-start gap-1.5"><IAlert size={12} className="shrink-0 mt-0.5"/> Advisory only — cross-checks the duty against your own uploaded manuals. Always confirm with crew scheduling/OCC.</div>
+      </Card>
+      <Card>
+        {!result && <EmptyState>Assessment will appear here.</EmptyState>}
+        {result && (
+          <div className="fade-up">
+            <div className="text-sm whitespace-pre-wrap leading-relaxed">{result.assessment || result.explanation}</div>
+            {result.citations && result.citations.map((c,i)=>(
+              <div key={i} className="text-xs border border-[#1e2a3a] rounded-xl p-2.5 mt-2">
+                <div className="text-[#8fb8ff] font-medium">{c.title} — p.{c.page}</div>
+                <div className="text-[#9aa7b3] mt-1">{c.excerpt}</div>
+              </div>
+            ))}
+          </div>
+        )}
+      </Card>
+    </div>
+  );
+}
+
+/* ---------------------------------------------------------------------- */
+/* Airports — weather + NOTAM widgets                                     */
+/* ---------------------------------------------------------------------- */
+
+const AUTO_REFRESH_MS = 10 * 60 * 1000; // 10 min, only while a card is open
+
+function flightCategory(metar) {
+  if (!metar) return null;
+  let vis = null;
+  if (metar.visib != null) {
+    const n = parseFloat(String(metar.visib).replace("+",""));
+    if (!isNaN(n)) vis = n;
+  }
+  let ceil = null;
+  if (Array.isArray(metar.clouds)) {
+    metar.clouds.forEach(c => {
+      if (c && (c.cover === "BKN" || c.cover === "OVC") && c.base != null) {
+        if (ceil === null || c.base < ceil) ceil = c.base;
+      }
+    });
+  }
+  if (vis === null && ceil === null) return null;
+  const v = vis === null ? 99 : vis;
+  const c = ceil === null ? 99999 : ceil;
+  if (v < 1 || c < 500) return { code:"LIFR", label:"Low IFR", color:"var(--lifr)" };
+  if (v < 3 || c < 1000) return { code:"IFR", label:"IFR", color:"var(--ifr)" };
+  if (v <= 5 || c <= 3000) return { code:"MVFR", label:"Marginal VFR", color:"var(--mvfr)" };
+  return { code:"VFR", label:"VFR", color:"var(--vfr)" };
+}
+
+function firstOf(x) { return Array.isArray(x) ? x[0] : x; }
+
+function extractNotams(notamResp) {
+  if (!notamResp || notamResp.error) return [];
+  let list = [];
+  if (Array.isArray(notamResp)) list = notamResp;
+  else if (Array.isArray(notamResp.data)) list = notamResp.data;
+  else if (Array.isArray(notamResp.results)) list = notamResp.results;
+  else if (typeof notamResp === "object") list = [notamResp];
+  return list.filter(Boolean);
+}
+function notamText(n) {
+  if (typeof n === "string") return n;
+  return n.raw || n.text || n.body || n.sanitized || JSON.stringify(n);
+}
+function notamMeta(n) {
+  if (typeof n !== "object" || n === null) return {};
+  const q = n.qualifiers || {};
+  const pick = (v) => (v && typeof v === "object") ? (v.repr || v.dt || v.value || null) : (v || null);
+  return {
+    number: n.number || n.notam_id || null,
+    type: pick(q.type) || n.type || null,
+    start: pick(n.start_time) || n.effective || null,
+    end: pick(n.end_time) || n.expiration || null,
+  };
+}
+
+function StatChip({ icon, label, value }) {
+  if (value === null || value === undefined || value === "") return null;
+  return (
+    <div className="flex items-center gap-2 bg-[#0b1119] border border-[#1e2a3a] rounded-lg px-2.5 py-2">
+      <div className="text-[#5c6b80] shrink-0">{icon}</div>
+      <div className="min-w-0">
+        <div className="text-[9px] uppercase tracking-wide text-[#5c6b80] leading-tight">{label}</div>
+        <div className="text-[13px] font-medium leading-tight truncate">{value}</div>
+      </div>
+    </div>
+  );
+}
+
+function MetarWidget({ metarResp }) {
+  if (!metarResp) return null;
+  if (metarResp.error) {
+    return <div className="text-xs text-[#f0a3a3] flex items-start gap-1.5"><IAlert size={13} className="shrink-0 mt-0.5"/> {metarResp.error}</div>;
+  }
+  const m = firstOf(metarResp.metar);
+  if (!m) return <div className="text-xs text-[#6b7885]">No current METAR for this station.</div>;
+  const cat = flightCategory(m);
+  const wind = (m.wdir != null && m.wspd != null) ? `${m.wdir === 0 ? "VRB" : String(m.wdir).padStart(3,"0")}° / ${m.wspd}kt${m.wgst ? " G"+m.wgst : ""}` : null;
+  const vis = m.visib != null ? `${m.visib} SM` : null;
+  const temp = (m.temp != null) ? `${m.temp}°C / ${m.dewp != null ? m.dewp+"°C" : "—"}` : null;
+  const altim = m.altim != null ? `${m.altim} hPa` : null;
+  const clouds = Array.isArray(m.clouds) && m.clouds.length
+    ? m.clouds.map(c => `${c.cover}${c.base != null ? c.base : ""}`).join(" ")
+    : (m.clouds === undefined ? null : "SKC");
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-2.5">
+        <div className="flex items-center gap-2">
+          <ICloud size={15} className="text-[#5c6b80]"/>
+          <span className="text-xs font-medium text-[#9aa7b3]">METAR</span>
+        </div>
+        {cat && <Badge color={cat.color}>{cat.code}</Badge>}
+      </div>
+      <div className="mono text-[11px] text-[#b7c3d1] bg-[#0b1119] border border-[#1e2a3a] rounded-lg p-2.5 mb-2.5 leading-relaxed break-words">
+        {m.rawOb || "raw report unavailable"}
+      </div>
+      <div className="grid grid-cols-2 gap-1.5">
+        <StatChip icon={<IWind size={13}/>} label="Wind" value={wind} />
+        <StatChip icon={<IEye size={13}/>} label="Visibility" value={vis} />
+        <StatChip icon={<IThermo size={13}/>} label="Temp / Dew" value={temp} />
+        <StatChip icon={<IGauge size={13}/>} label="Altimeter" value={altim} />
+        <StatChip icon={<ICloud size={13}/>} label="Clouds" value={clouds} />
+      </div>
+    </div>
+  );
+}
+
+function TafWidget({ tafResp }) {
+  if (!tafResp) return null;
+  if (tafResp.error) return null; // already surfaced by MetarWidget's shared error state
+  const t = firstOf(tafResp.taf);
+  if (!t || !t.rawTAF) return <div className="text-xs text-[#6b7885]">No current TAF for this station.</div>;
+  return (
+    <div className="mt-3">
+      <div className="flex items-center gap-2 mb-2">
+        <IClock size={14} className="text-[#5c6b80]"/>
+        <span className="text-xs font-medium text-[#9aa7b3]">TAF</span>
+      </div>
+      <div className="mono text-[11px] text-[#b7c3d1] bg-[#0b1119] border border-[#1e2a3a] rounded-lg p-2.5 leading-relaxed whitespace-pre-wrap break-words">
+        {t.rawTAF}
+      </div>
+    </div>
+  );
+}
+
+function NotamWidget({ notams, avwxTokenMissing }) {
+  const [openIdx, setOpenIdx] = useState(null);
+  if (avwxTokenMissing) {
+    return (
+      <div className="mt-3 text-xs text-[#e0b76b] bg-[#241c0d] border border-[#3a2f14] rounded-lg p-2.5 flex items-start gap-1.5">
+        <IAlert size={13} className="shrink-0 mt-0.5"/>
+        No AVWX_TOKEN set on the backend, so NOTAMs can't load. Add a free key from avwx.rest as the AVWX_TOKEN variable in Railway.
+      </div>
+    );
+  }
+  const list = extractNotams(notams);
+  return (
+    <div className="mt-3">
+      <div className="flex items-center gap-2 mb-2">
+        <IAlert size={14} className="text-[#5c6b80]"/>
+        <span className="text-xs font-medium text-[#9aa7b3]">NOTAMs</span>
+        {list.length > 0 && <Badge color="#e0b76b">{list.length}</Badge>}
+      </div>
+      {list.length === 0 && <div className="text-xs text-[#6b7885]">No active NOTAMs returned for this station.</div>}
+      <div className="flex flex-col gap-1.5">
+        {list.map((n, i) => {
+          const meta = notamMeta(n);
+          const text = notamText(n);
+          const open = openIdx === i;
+          return (
+            <button key={i} onClick={()=>setOpenIdx(open ? null : i)}
+              className="text-left text-xs bg-[#0b1119] border border-[#1e2a3a] hover:border-[#2a3a4f] rounded-lg p-2.5 transition">
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-1.5 min-w-0">
+                  {meta.number && <span className="text-[#8fb8ff] font-medium shrink-0">{meta.number}</span>}
+                  {meta.type && <Badge color="#5c6b80">{meta.type}</Badge>}
+                </div>
+                <IChevDown size={13} className={cx("text-[#5c6b80] shrink-0 transition-transform", open && "rotate-180")} />
+              </div>
+              {(meta.start || meta.end) && (
+                <div className="text-[10px] text-[#5c6b80] mt-1">{meta.start || "?"} → {meta.end || "?"}</div>
+              )}
+              <div className={cx("mono text-[#b7c3d1] mt-1.5 whitespace-pre-wrap break-words", !open && "line-clamp-2")}>{text}</div>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function WeatherPanel({ icao, state, onRefresh }) {
+  const [, forceTick] = useState(0);
+  useEffect(() => {
+    const id = setInterval(() => forceTick(t => t + 1), 20000); // re-render "Xm ago" label
+    return () => clearInterval(id);
+  }, []);
+
+  const loadingFirst = state?.loading && !state?.data;
+  const data = state?.data;
+  const err = state?.error;
+  const ago = timeAgo(data?.updated_at);
+  const notamMissing = data?.notams?.error && /AVWX_TOKEN/i.test(data.notams.error);
+
+  return (
+    <div className="mt-3 pt-3 border-t border-[#1e2a3a] fade-up">
+      <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center gap-1.5 text-[11px] text-[#5c6b80]">
+          <span className={cx("w-1.5 h-1.5 rounded-full bg-[#22d3ee]", state?.loading ? "pulse-dot" : "")}></span>
+          {state?.loading ? "Refreshing…" : ago ? `Updated ${ago}` : "Not synced yet"}
+          <span className="text-[#3a4a5f]">· auto-refreshes every 10 min while open</span>
+        </div>
+        <button onClick={onRefresh} disabled={state?.loading}
+          className="flex items-center gap-1 text-[11px] text-[#8fb8ff] hover:text-white transition disabled:opacity-50">
+          <IRefresh size={12} className={state?.loading ? "spin" : ""}/> Refresh now
+        </button>
+      </div>
+
+      {loadingFirst && (
+        <div className="space-y-2">
+          <div className="skel h-16 w-full"></div>
+          <div className="skel h-8 w-full"></div>
+          <div className="skel h-8 w-2/3"></div>
+        </div>
+      )}
+
+      {err && !data && (
+        <div className="text-xs text-[#f0a3a3] flex items-start gap-1.5"><IAlert size={13} className="shrink-0 mt-0.5"/> {err}</div>
+      )}
+
+      {data && (
+        <div>
+          <MetarWidget metarResp={data.weather} />
+          <TafWidget tafResp={data.weather} />
+          <NotamWidget notams={data.notams} avwxTokenMissing={notamMissing} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function AirportCard({ a, expanded, onToggle, weatherState, onRefresh, onOpenBriefing }) {
+  return (
+    <Card className="fade-up">
+      <div className="flex justify-between items-start gap-2">
+        <button className="text-left min-w-0 flex-1" onClick={onToggle}>
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="font-semibold text-sm">{a.icao}</span>
+            {a.icao_real && a.icao_real !== a.icao && <span className="text-xs text-[#6b7885]">({a.icao_real})</span>}
+          </div>
+          <div className="text-xs text-[#6b7885] mt-0.5 truncate">{[a.name, a.city, a.country].filter(Boolean).join(" · ") || "Tap to view weather & briefing"}</div>
+        </button>
+        <div className="flex gap-1.5 shrink-0">
+          <button onClick={()=>onOpenBriefing(a.icao)} title="Briefing"
+            className="w-8 h-8 rounded-lg bg-[#0b1119] border border-[#1e2a3a] grid place-items-center text-[#8493a6] hover:border-[#3b82f6] hover:text-[#8fb8ff] transition">
+            <IFile size={14}/>
+          </button>
+          <button onClick={onToggle} title="Weather & NOTAMs"
+            className={cx("w-8 h-8 rounded-lg border grid place-items-center transition",
+              expanded ? "bg-[#12233d] border-[#3b82f6] text-[#8fb8ff]" : "bg-[#0b1119] border-[#1e2a3a] text-[#8493a6] hover:border-[#3b82f6] hover:text-[#8fb8ff]")}>
+            <ICloud size={14}/>
+          </button>
+        </div>
+      </div>
+      {expanded && <WeatherPanel icao={a.icao} state={weatherState} onRefresh={()=>onRefresh(a.icao)} />}
+    </Card>
+  );
+}
+
+function BriefingModal({ briefing, onClose }) {
+  if (!briefing) return null;
+  return (
+    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-start justify-center overflow-auto p-3 z-30 fade-up"
+      onClick={onClose}>
+      <div className="glass glass-hi rounded-2xl p-4 max-w-2xl w-full mt-6"
+        onClick={e=>e.stopPropagation()}>
+        <div className="flex justify-between items-start mb-3">
+          <div className="flex items-center gap-2">
+            <div className="w-8 h-8 rounded-lg bg-[#12233d] grid place-items-center"><IMapPin size={14} className="text-[#8fb8ff]"/></div>
+            <div className="font-medium">{briefing.icao} {briefing.icao_real ? `— ${briefing.icao_real}` : ""}</div>
+          </div>
+          <button onClick={onClose} className="text-[#6b7885] hover:text-white transition"><IX size={18}/></button>
+        </div>
+        <pre className="text-xs whitespace-pre-wrap leading-relaxed text-[#c9d3dc] mono max-h-[60vh] overflow-auto">{briefing.briefing_md || "No briefing notes on file."}</pre>
+        {briefing.attachments && briefing.attachments.length > 0 && (
+          <div className="mt-3 border-t border-[#1e2a3a] pt-3">
+            <SectionLabel icon={<IFile size={12}/>}>Charts / attachments</SectionLabel>
+            <div className="flex flex-wrap gap-2">
+              {briefing.attachments.map((att,i) => (
+                <a key={i} href={`${ORIGIN}/airport-files/${att.relpath}`} target="_blank" rel="noreferrer"
+                  className="text-xs bg-[#0b1119] border border-[#1e2a3a] px-2.5 py-1.5 rounded-lg text-[#8fb8ff] hover:border-[#3b82f6] transition">
+                  {(att.filetype||"file").toUpperCase()} · {att.filename.slice(0,14)}…
+                </a>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function AirportsTab() {
+  const [airports, setAirports] = useState([]);
+  const [showAdd, setShowAdd] = useState(false);
+  const [form, setForm] = useState({ icao:"", iata:"", name:"", city:"", country:"" });
+  const [filter, setFilter] = useState("");
+  const [expandedIcao, setExpandedIcao] = useState(null);
+  const [weatherByIcao, setWeatherByIcao] = useState({});
+  const [briefing, setBriefing] = useState(null);
+
+  const load = () => fetch(`${API}/airports`).then(r=>r.json()).then(setAirports).catch(()=>{});
+  useEffect(load, []);
+
+  const add = async () => {
+    if (!form.icao) return;
+    const fd = new FormData();
+    Object.entries(form).forEach(([k,v]) => fd.append(k, v));
+    await fetch(`${API}/airports`, { method:"POST", body: fd });
+    setForm({ icao:"", iata:"", name:"", city:"", country:"" });
+    setShowAdd(false);
+    load();
+  };
+
+  const fetchLatest = async (icao) => {
+    setWeatherByIcao(w => ({ ...w, [icao]: { ...(w[icao]||{}), loading:true, error:null } }));
+    try {
+      const res = await fetch(`${API}/airports/${icao}/latest`);
+      const data = await res.json();
+      setWeatherByIcao(w => ({ ...w, [icao]: { loading:false, error:null, data } }));
+    } catch (e) {
+      setWeatherByIcao(w => ({ ...w, [icao]: { ...(w[icao]||{}), loading:false, error: "Couldn't reach the weather service." } }));
+    }
+  };
+
+  const forceRefresh = async (icao) => {
+    setWeatherByIcao(w => ({ ...w, [icao]: { ...(w[icao]||{}), loading:true, error:null } }));
+    try {
+      const res = await fetch(`${API}/airports/${icao}/sync`);
+      const data = await res.json();
+      setWeatherByIcao(w => ({ ...w, [icao]: { loading:false, error:null, data } }));
+    } catch (e) {
+      setWeatherByIcao(w => ({ ...w, [icao]: { ...(w[icao]||{}), loading:false, error: "Couldn't reach the weather service." } }));
+    }
+  };
+
+  const toggleExpand = (icao) => {
+    setExpandedIcao(cur => cur === icao ? null : icao);
+  };
+
+  useEffect(() => {
+    if (!expandedIcao) return;
+    if (!weatherByIcao[expandedIcao]) fetchLatest(expandedIcao);
+    const id = setInterval(() => forceRefresh(expandedIcao), AUTO_REFRESH_MS);
+    return () => clearInterval(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [expandedIcao]);
+
+  const openBriefing = async (icao) => {
+    const res = await fetch(`${API}/airports/${icao}/briefing`);
+    setBriefing(await res.json());
+  };
+
+  const shown = airports.filter(a =>
+    !filter || a.icao.includes(filter.toUpperCase()) || (a.icao_real||"").includes(filter.toUpperCase()) || (a.city||"").toUpperCase().includes(filter.toUpperCase())
+  );
+
+  return (
+    <div className="p-3 fade-up">
+      <Card>
+        <button onClick={()=>setShowAdd(s=>!s)} className="w-full flex items-center justify-between text-left">
+          <SectionLabel icon={<IPlus size={12}/>}>Add airport</SectionLabel>
+          <IChevDown size={14} className={cx("text-[#5c6b80] transition-transform", showAdd && "rotate-180")}/>
+        </button>
+        {showAdd && (
+          <div className="mt-2 fade-up">
+            <div className="grid grid-cols-2 gap-2">
+              {["icao","iata","name","city","country"].map(f => (
+                <input key={f} placeholder={f.toUpperCase()} value={form[f]}
+                  onChange={e=>setForm({...form,[f]:e.target.value})}
+                  className="bg-[#0b1119] border border-[#1e2a3a] rounded-lg p-2 text-sm outline-none focus:border-[#3b82f6] transition" />
+              ))}
+            </div>
+            <button onClick={add} className="mt-2 bg-gradient-to-b from-[#3b82f6] to-[#2563eb] text-white text-sm font-medium py-2 px-4 rounded-lg">Save</button>
+          </div>
+        )}
+      </Card>
+
+      <div className="relative mt-3">
+        <ISearch size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#5c6b80]"/>
+        <input placeholder="Filter by code or city (e.g. ABJ, Doha)…" value={filter} onChange={e=>setFilter(e.target.value)}
+          className="w-full bg-[#0b1119] border border-[#1e2a3a] rounded-xl pl-9 pr-3 py-2.5 text-sm outline-none focus:border-[#3b82f6] transition" />
+      </div>
+
+      <div className="grid md:grid-cols-2 gap-3 mt-3">
+        {shown.map(a => (
+          <AirportCard key={a.icao} a={a}
+            expanded={expandedIcao === a.icao}
+            onToggle={()=>toggleExpand(a.icao)}
+            weatherState={weatherByIcao[a.icao]}
+            onRefresh={forceRefresh}
+            onOpenBriefing={openBriefing} />
+        ))}
+        {shown.length === 0 && <EmptyState>No airports match that filter.</EmptyState>}
+      </div>
+
+      <BriefingModal briefing={briefing} onClose={()=>setBriefing(null)} />
+    </div>
+  );
+}
+
+/* ---------------------------------------------------------------------- */
+/* Escape Routes                                                          */
+/* ---------------------------------------------------------------------- */
+
+function EscapeRoutesTab() {
+  const [docs, setDocs] = useState([]);
+  const [active, setActive] = useState(null);
+  const [query, setQuery] = useState("");
+
+  useEffect(() => { fetch(`${API}/references`).then(r=>r.json()).then(setDocs).catch(()=>{}); }, []);
+
+  const open = async (id) => {
+    const res = await fetch(`${API}/references/${id}`);
+    setActive(await res.json());
+  };
+
+  const blocks = active ? active.body_md.split(/\n(?=[A-Z]{3,6}\s*\n|[A-Z]{3,6}\s*$)/m) : [];
+  const filteredBlocks = query ? blocks.filter(b => b.toUpperCase().includes(query.toUpperCase())) : blocks;
+
+  return (
+    <div className="p-3 grid md:grid-cols-3 gap-3 fade-up">
+      <Card className="md:col-span-1">
+        <SectionLabel icon={<IRoute size={12}/>}>Reference documents</SectionLabel>
+        <div className="flex flex-col gap-2">
+          {docs.map(d => (
+            <button key={d.id} onClick={()=>open(d.id)}
+              className={cx("text-left text-sm px-2.5 py-2 rounded-xl border transition",
+                active && active.id===d.id ? "border-[#3b82f6] bg-[#12233d]" : "border-[#1e2a3a] hover:border-[#2a3a4f]")}>
+              {d.title}
+              <div className="text-[10px] text-[#6b7885] uppercase">{d.category}</div>
+            </button>
+          ))}
+          {docs.length===0 && <EmptyState>No SID/escape-route reference docs indexed yet.</EmptyState>}
+        </div>
+      </Card>
+
+      <Card className="md:col-span-2">
+        {!active && <EmptyState>Select a document to view exit points and routings.</EmptyState>}
+        {active && (
+          <div className="fade-up">
+            <div className="relative mb-3">
+              <ISearch size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#5c6b80]"/>
+              <input placeholder="Filter by exit point (e.g. KONET, ALEMU)…" value={query} onChange={e=>setQuery(e.target.value)}
+                className="w-full bg-[#0b1119] border border-[#1e2a3a] rounded-xl pl-9 pr-3 py-2.5 text-sm outline-none focus:border-[#3b82f6] transition" />
+            </div>
+            <div className="flex flex-col gap-2 max-h-[70vh] overflow-auto">
+              {filteredBlocks.map((b,i) => (
+                <pre key={i} className="text-xs whitespace-pre-wrap leading-relaxed text-[#c9d3dc] mono border border-[#1e2a3a] rounded-xl p-2.5 bg-[#0b1119]">{b.trim()}</pre>
+              ))}
+            </div>
+          </div>
+        )}
+      </Card>
+    </div>
+  );
+}
+
+/* ---------------------------------------------------------------------- */
+/* Bulletins                                                              */
+/* ---------------------------------------------------------------------- */
+
+const SEVERITY_COLOR = { info:"#3b82f6", warning:"#e0b76b", critical:"#ef4444" };
+
+function BulletinsTab() {
+  const [bulletins, setBulletins] = useState([]);
+  const [form, setForm] = useState({ title:"", body:"", severity:"info" });
+  const load = () => fetch(`${API}/bulletins`).then(r=>r.json()).then(setBulletins).catch(()=>{});
+  useEffect(load, []);
+
+  const create = async () => {
+    if (!form.title || !form.body) return;
+    const fd = new FormData();
+    Object.entries(form).forEach(([k,v]) => fd.append(k, v));
+    await fetch(`${API}/bulletins`, { method:"POST", body: fd });
+    setForm({ title:"", body:"", severity:"info" });
+    load();
+  };
+
+  const push = async (id) => {
+    await fetch(`${API}/bulletins/${id}/push`, { method:"POST" });
+    load();
+  };
+
+  return (
+    <div className="p-3 fade-up">
+      <Card>
+        <SectionLabel icon={<IBell size={12}/>}>New bulletin</SectionLabel>
+        <input placeholder="Title" value={form.title} onChange={e=>setForm({...form,title:e.target.value})}
+          className="w-full bg-[#0b1119] border border-[#1e2a3a] rounded-xl p-2.5 text-sm mb-2 outline-none focus:border-[#3b82f6] transition" />
+        <textarea placeholder="Body" rows={3} value={form.body} onChange={e=>setForm({...form,body:e.target.value})}
+          className="w-full bg-[#0b1119] border border-[#1e2a3a] rounded-xl p-2.5 text-sm mb-2 outline-none focus:border-[#3b82f6] transition" />
+        <div className="flex gap-2 items-center">
+          <div className="flex gap-1">
+            {["info","warning","critical"].map(s => (
+              <button key={s} onClick={()=>setForm({...form,severity:s})}
+                className={cx("text-xs px-2.5 py-1.5 rounded-lg border capitalize transition")}
+                style={form.severity===s ? { borderColor:SEVERITY_COLOR[s], background:SEVERITY_COLOR[s]+"22", color:SEVERITY_COLOR[s] } : { borderColor:"#1e2a3a", color:"#6b7885" }}>
+                {s}
+              </button>
+            ))}
+          </div>
+          <button onClick={create} className="ml-auto bg-gradient-to-b from-[#3b82f6] to-[#2563eb] text-white text-sm px-4 py-2 rounded-lg">Save draft</button>
+        </div>
+      </Card>
+
+      <div className="flex flex-col gap-2 mt-3">
+        {bulletins.map(b => (
+          <Card key={b.id}>
+            <div className="flex justify-between items-start gap-2">
+              <div className="min-w-0">
+                <div className="flex items-center gap-2">
+                  <Badge color={SEVERITY_COLOR[b.severity]||"#6b7885"}>{b.severity}</Badge>
+                  <div className="font-medium text-sm">{b.title}</div>
+                </div>
+                <div className="text-xs text-[#9aa7b3] mt-1.5">{b.body}</div>
+                <div className="text-[10px] text-[#5c6b80] mt-1.5">{b.created_at} {b.pushed ? "· pushed" : ""}</div>
+              </div>
+              {!b.pushed && (
+                <button onClick={()=>push(b.id)} className="text-xs bg-[#3b82f6] text-white px-2.5 py-1.5 rounded-lg shrink-0 flex items-center gap-1"><ISend size={11}/> Push</button>
+              )}
+            </div>
+          </Card>
+        ))}
+        {bulletins.length===0 && <EmptyState>No bulletins yet.</EmptyState>}
+      </div>
+    </div>
+  );
+}
+
+/* ---------------------------------------------------------------------- */
+/* Salary                                                                 */
+/* ---------------------------------------------------------------------- */
+
+function SalaryTab() {
+  const [inp, setInp] = useState({
+    base_monthly_salary: 0, guaranteed_block_hours: 75, hourly_rate_above_guarantee: null,
+    average_block_hours_flown: 75, per_diem_daily: 0, per_diem_days_per_month: 0,
+    other_monthly_allowances: 0, currency: "USD",
+  });
+  const [result, setResult] = useState(null);
+
+  const calc = async () => {
+    const res = await fetch(`${API}/salary`, {
+      method:"POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify(inp)
+    });
+    setResult(await res.json());
+  };
+
+  const field = (key, label) => (
+    <div className="mb-2.5">
+      <label className="text-xs text-[#6b7885]">{label}</label>
+      <input type="number" value={inp[key] ?? ""} onChange={e=>setInp({...inp,[key]: e.target.value===""?null:parseFloat(e.target.value)})}
+        className="w-full bg-[#0b1119] border border-[#1e2a3a] rounded-lg p-2 text-sm mt-1 outline-none focus:border-[#3b82f6] transition" />
+    </div>
+  );
+
+  const Stat = ({ label, value, big }) => (
+    <div className="bg-[#0b1119] border border-[#1e2a3a] rounded-xl p-3">
+      <div className="text-[10px] uppercase tracking-wide text-[#5c6b80]">{label}</div>
+      <div className={cx("font-semibold mt-0.5", big ? "text-xl text-[#8fb8ff]" : "text-sm")}>{value}</div>
+    </div>
+  );
+
+  return (
+    <div className="p-3 grid md:grid-cols-2 gap-3 fade-up">
+      <Card>
+        <SectionLabel icon={<IDollar size={12}/>}>Inputs</SectionLabel>
+        {field("base_monthly_salary","Base monthly salary")}
+        {field("guaranteed_block_hours","Guaranteed block hours / month")}
+        {field("hourly_rate_above_guarantee","Hourly rate above guarantee (optional)")}
+        {field("average_block_hours_flown","Average block hours flown / month")}
+        {field("per_diem_daily","Per diem (daily)")}
+        {field("per_diem_days_per_month","Per diem days / month")}
+        {field("other_monthly_allowances","Other monthly allowances")}
+        <button onClick={calc} className="mt-1 bg-gradient-to-b from-[#3b82f6] to-[#2563eb] text-white text-sm font-medium py-2.5 w-full rounded-xl">Calculate</button>
+      </Card>
+      <Card>
+        {!result && <EmptyState>Results appear here.</EmptyState>}
+        {result && (
+          <div className="grid grid-cols-2 gap-2 fade-up">
+            <Stat label="Monthly total" value={`${result.monthly_total} ${result.currency}`} big />
+            <Stat label="Annual total (est.)" value={`${result.annual_total_estimate} ${result.currency}`} big />
+            <Stat label="Effective hourly rate" value={`${result.effective_hourly_rate} ${result.currency}`} />
+            <Stat label="Extra hours this month" value={result.extra_hours_this_month} />
+            <Stat label="Extra pay this month" value={`${result.extra_pay_this_month} ${result.currency}`} />
+            <Stat label="Per diem (monthly)" value={`${result.per_diem_monthly} ${result.currency}`} />
+            <Stat label="Annual block hours (est.)" value={result.annual_block_hours_estimate} />
+          </div>
+        )}
+      </Card>
+    </div>
+  );
+}
+
+/* ---------------------------------------------------------------------- */
+/* App                                                                    */
+/* ---------------------------------------------------------------------- */
+
+function App() {
+  const [tab, setTab] = useState("Airports");
+  const inTelegram = !!(tg() && tg().initData);
+  useEffect(() => { if (tg()) { tg().ready(); tg().expand(); } }, []);
+
+  return (
+    <div className="min-h-screen pb-8">
+      <Header inTelegram={inTelegram} />
+      <Nav tab={tab} setTab={setTab} />
+      {tab==="Ask" && <AskTab/>}
+      {tab==="Documents" && <DocumentsTab/>}
+      {tab==="Legality" && <LegalityTab/>}
+      {tab==="Airports" && <AirportsTab/>}
+      {tab==="Escape Routes" && <EscapeRoutesTab/>}
+      {tab==="Bulletins" && <BulletinsTab/>}
+      {tab==="Salary" && <SalaryTab/>}
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+</script>
+</body>
+</html>
