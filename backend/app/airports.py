@@ -1,5 +1,6 @@
 import os
 import json
+import re
 import requests
 from datetime import datetime, timezone
 from .db import get_conn
@@ -107,7 +108,355 @@ def sync_airport(icao: str, persist: bool = True):
         "notams": notams,
         "updated_at": now,
     }
+# ============================================================
+# FREE WORLDWIDE METAR / TAF PLAIN-ENGLISH TRANSLATION
+# Source: AviationWeather.gov
+# This is ONLY used for translation.
+# AVWX remains the primary weather source/display.
+# ============================================================
 
+AWC_TRANSLATION_BASE = "https://aviationweather.gov/api/data"
+
+
+def fetch_free_metar_taf_for_translation(icao: str):
+    """
+    Get worldwide METAR + TAF from AviationWeather.gov.
+
+    This does NOT replace AVWX.
+    It is only used to translate the weather into plain words.
+    """
+
+    icao = icao.upper().strip()
+
+    result = {
+        "metar": "",
+        "taf": "",
+    }
+
+    try:
+        # -----------------------------
+        # METAR
+        # -----------------------------
+        r = requests.get(
+            f"{AWC_TRANSLATION_BASE}/metar",
+            params={
+                "ids": icao,
+                "format": "json",
+                "hours": 2,
+            },
+            timeout=8,
+        )
+
+        if r.ok:
+
+            data = r.json()
+
+            if isinstance(data, list) and data:
+
+                metar = data[0]
+
+                result["metar"] = (
+                    metar.get("rawOb")
+                    or metar.get("raw_text")
+                    or metar.get("rawText")
+                    or ""
+                )
+
+        # -----------------------------
+        # TAF
+        # -----------------------------
+        r = requests.get(
+            f"{AWC_TRANSLATION_BASE}/taf",
+            params={
+                "ids": icao,
+                "format": "json",
+            },
+            timeout=8,
+        )
+
+        if r.ok:
+
+            data = r.json()
+
+            if isinstance(data, list) and data:
+
+                taf = data[0]
+
+                result["taf"] = (
+                    taf.get("rawTAF")
+                    or taf.get("raw_text")
+                    or taf.get("rawText")
+                    or ""
+                )
+
+    except Exception as e:
+
+        print(
+            f"Free METAR/TAF translation source error "
+            f"{icao}: {e}"
+        )
+
+    return result
+
+
+def translate_weather_to_plain_words(metar, taf):
+    """
+    Return ONLY operationally relevant adverse weather.
+
+    If nothing significant is detected:
+        Weather is good.
+    """
+
+    text = (
+        f"{metar or ''} "
+        f"{taf or ''}"
+    ).upper()
+
+    adverse = []
+
+    # --------------------------------------------------------
+    # THUNDERSTORMS / CONVECTION
+    # --------------------------------------------------------
+
+    if "TSRA" in text or "TS" in text:
+        adverse.append("thunderstorms")
+
+    if "CB" in text:
+        adverse.append("cumulonimbus clouds")
+
+    if "TCU" in text:
+        adverse.append("towering cumulus clouds")
+
+    # --------------------------------------------------------
+    # RAIN / DRIZZLE
+    # --------------------------------------------------------
+
+    if "+RA" in text:
+        adverse.append("heavy rain")
+
+    elif "-RA" in text:
+        adverse.append("light rain")
+
+    elif "RA" in text:
+        adverse.append("rain")
+
+    if "+DZ" in text:
+        adverse.append("heavy drizzle")
+
+    elif "-DZ" in text:
+        adverse.append("light drizzle")
+
+    elif "DZ" in text:
+        adverse.append("drizzle")
+
+    # --------------------------------------------------------
+    # SHOWERS
+    # --------------------------------------------------------
+
+    if "SHRA" in text:
+        adverse.append("rain showers")
+
+    if "SHSN" in text:
+        adverse.append("snow showers")
+
+    # --------------------------------------------------------
+    # SNOW / FREEZING PRECIPITATION
+    # --------------------------------------------------------
+
+    if "+SN" in text:
+        adverse.append("heavy snow")
+
+    elif "-SN" in text:
+        adverse.append("light snow")
+
+    elif "SN" in text:
+        adverse.append("snow")
+
+    if "FZRA" in text:
+        adverse.append("freezing rain")
+
+    if "FZDZ" in text:
+        adverse.append("freezing drizzle")
+
+    if "PL" in text:
+        adverse.append("ice pellets")
+
+    if "GR" in text:
+        adverse.append("hail")
+
+    # --------------------------------------------------------
+    # VISIBILITY / OBSCURATION
+    # --------------------------------------------------------
+
+    if "FG" in text:
+        adverse.append("fog")
+
+    if "BR" in text:
+        adverse.append("mist")
+
+    if "HZ" in text:
+        adverse.append("haze")
+
+    if "DU" in text:
+        adverse.append("dust")
+
+    if "SA" in text:
+        adverse.append("sand")
+
+    if "DS" in text:
+        adverse.append("dust storm")
+
+    if "SS" in text:
+        adverse.append("sandstorm")
+
+    # --------------------------------------------------------
+    # WIND SHEAR
+    # --------------------------------------------------------
+
+    if "WS" in text:
+        adverse.append("wind shear")
+
+    # --------------------------------------------------------
+    # VISIBILITY
+    #
+    # Detect 4-digit visibility values.
+    # Only report values below 5000 m.
+    # --------------------------------------------------------
+
+    visibility_values = re.findall(
+        r"(?<!\d)(\d{4})(?!\d)",
+        text
+    )
+
+    for value in visibility_values:
+
+        vis = int(value)
+
+        # Ignore dates / times / pressures etc.
+        if vis == 9999:
+            continue
+
+        if 0 < vis < 1000:
+
+            adverse.append(
+                f"very poor visibility ({vis} m)"
+            )
+
+            break
+
+        elif vis < 3000:
+
+            adverse.append(
+                f"poor visibility ({vis} m)"
+            )
+
+            break
+
+        elif vis < 5000:
+
+            adverse.append(
+                f"reduced visibility ({vis} m)"
+            )
+
+            break
+
+    # --------------------------------------------------------
+    # LOW CLOUD / LOW CEILING
+    # --------------------------------------------------------
+
+    cloud_matches = re.findall(
+        r"\b(SCT|BKN|OVC|VV)(\d{3})\b",
+        text
+    )
+
+    for cover, height in cloud_matches:
+
+        altitude = int(height) * 100
+
+        if cover == "SCT" and altitude < 1000:
+
+            adverse.append(
+                f"low scattered cloud at {altitude} ft"
+            )
+
+        elif cover in ("BKN", "OVC", "VV"):
+
+            if altitude < 1500:
+
+                adverse.append(
+                    f"low ceiling around {altitude} ft"
+                )
+
+    # --------------------------------------------------------
+    # WIND / GUSTS
+    # --------------------------------------------------------
+
+    wind_matches = re.findall(
+        r"\b(\d{3})(\d{2,3})(?:G(\d{2,3}))?KT\b",
+        text
+    )
+
+    for direction, speed, gust in wind_matches:
+
+        speed = int(speed)
+
+        if speed >= 25:
+
+            adverse.append(
+                f"strong wind around {speed} kt"
+            )
+
+        if gust:
+
+            gust = int(gust)
+
+            if gust >= 30:
+
+                adverse.append(
+                    f"gusts up to {gust} kt"
+                )
+
+    # --------------------------------------------------------
+    # REMOVE DUPLICATES
+    # --------------------------------------------------------
+
+    adverse = list(
+        dict.fromkeys(adverse)
+    )
+
+    # --------------------------------------------------------
+    # FINAL RESULT
+    # --------------------------------------------------------
+
+    if not adverse:
+
+        return "Weather is good."
+
+    return (
+        "Adverse weather: "
+        + "; ".join(adverse)
+        + "."
+    )
+
+def get_weather_translation(icao: str):
+
+    data = fetch_free_metar_taf_for_translation(
+        icao
+    )
+
+    return {
+        "weather_translation":
+            translate_weather_to_plain_words(
+                data.get("metar", ""),
+                data.get("taf", ""),
+            ),
+
+        "translation_metar":
+            data.get("metar", ""),
+
+        "translation_taf":
+            data.get("taf", ""),
+    }
 
 def parse_briefing_fields(body_md: str) -> dict:
     """Pulls the INFO block (OPS/RW/ELEV/UTC/CAT/ALT/SID/EXIT/TL-TA/EO Alt/
