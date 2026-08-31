@@ -89,6 +89,7 @@ def sync_airport(icao: str, persist: bool = True):
     lookup_code = (row["icao_real"] if row and row["icao_real"] else code)
 
     weather = fetch_metar_taf(lookup_code)
+    translation = get_weather_translation(lookup_code)
     notams = fetch_notams(lookup_code)
     now = datetime.now(timezone.utc).isoformat()
 
@@ -105,6 +106,14 @@ def sync_airport(icao: str, persist: bool = True):
         "icao": code,
         "lookup_code": lookup_code,
         "weather": weather,
+        "weather_translation": translation["weather_translation"],
+
+    # Keep these only if you want the translated
+
+    # source data available to the frontend.
+
+        "translation_metar": translation["translation_metar"],
+        "translation_taf": translation["translation_taf"],
         "notams": notams,
         "updated_at": now,
     }
