@@ -343,78 +343,271 @@ function extractRawText(obj, keys) {
   if (!obj || typeof obj !== "object") return null;
   for (const k of keys) { if (obj[k]) return obj[k]; }
   return null;
-}
 
-function WeatherPanel({ icao, initialWeather, initialNotams, initialUpdatedAt }) {
+ function WeatherPanel({
+  icao,
+  initialWeather,
+  initialUpdatedAt
+}) {
+
   const [weather, setWeather] = useState(initialWeather);
-  const [notams, setNotams] = useState(initialNotams);
-  const [updatedAt, setUpdatedAt] = useState(initialUpdatedAt);
-  const [refreshing, setRefreshing] = useState(false);
+
+  const [weatherTranslation, setWeatherTranslation] =
+    useState("Checking weather…");
+
+  const [updatedAt, setUpdatedAt] =
+    useState(initialUpdatedAt);
+
+  const [refreshing, setRefreshing] =
+    useState(false);
+
   const intervalRef = useRef(null);
 
+
   const refresh = async () => {
+
     setRefreshing(true);
+
     try {
-      const res = await fetch(`${API}/airports/${icao}/sync`);
+
+      const res = await fetch(
+        `${API}/airports/${icao}/sync`
+      );
+
       const data = await res.json();
-      setWeather(data.weather); setNotams(data.notams); setUpdatedAt(data.updated_at);
-    } catch (e) {}
-    setRefreshing(false);
+
+
+      // Existing AVWX/weather data
+      if (data.weather !== undefined) {
+
+        setWeather(data.weather);
+
+      }
+
+
+      // NEW plain-English translation
+      if (data.weather_translation) {
+
+        setWeatherTranslation(
+          data.weather_translation
+        );
+
+      } else {
+
+        setWeatherTranslation(
+          "Weather translation unavailable."
+        );
+
+      }
+
+
+      if (data.updated_at) {
+
+        setUpdatedAt(
+          data.updated_at
+        );
+
+      }
+
+    } catch (e) {
+
+      console.error(
+        "Weather refresh failed:",
+        e
+      );
+
+      setWeatherTranslation(
+        "Weather translation unavailable."
+      );
+
+    } finally {
+
+      setRefreshing(false);
+
+    }
   };
 
+
   useEffect(() => {
-    if (!updatedAt) refresh(); // auto-fetch on first open if nothing cached
-    intervalRef.current = setInterval(refresh, 5 * 60 * 1000); // auto-refresh every 5 min while open
-    return () => clearInterval(intervalRef.current);
+
+    /*
+     * ALWAYS perform a fresh sync when the
+     * airport briefing is opened.
+     *
+     * This is important because the airport
+     * may already have cached weather.
+     */
+
+    refresh();
+
+
+    /*
+     * Automatically refresh every 5 minutes.
+     */
+
+    intervalRef.current =
+      setInterval(
+        refresh,
+        5 * 60 * 1000
+      );
+
+
+    return () => {
+
+      if (intervalRef.current) {
+
+        clearInterval(
+          intervalRef.current
+        );
+
+      }
+
+    };
+
   }, [icao]);
 
-  const metarText = extractRawText(weather && weather.metar, ["rawOb", "raw_text", "rawText", "metar"]);
-  const tafText = extractRawText(weather && weather.taf, ["rawTAF", "raw_text", "rawText", "taf"]);
-  const weatherError = weather && weather.error;
-  const notamError = notams && notams.error;
-  const notamList = notams && Array.isArray(notams.data) ? notams.data : null;
+
+  const metarText =
+    extractRawText(
+      weather && weather.metar,
+      [
+        "rawOb",
+        "raw_text",
+        "rawText",
+        "metar"
+      ]
+    );
+
+
+  const tafText =
+    extractRawText(
+      weather && weather.taf,
+      [
+        "rawTAF",
+        "raw_text",
+        "rawText",
+        "taf"
+      ]
+    );
+
+
+  const weatherError =
+    weather && weather.error;
+
 
   return (
+
     <div className="grid gap-3 mt-3">
-      <Panel className="p-4">
-        <div className="flex items-center justify-between mb-2">
-          <Label>Weather</Label>
-          <div className="flex items-center gap-2">
-            {updatedAt && <span className="text-[11px] text-[var(--muted)]">{timeAgo(updatedAt)}</span>}
-            <button onClick={refresh} disabled={refreshing}
-              className="text-xs bg-[var(--panel-2)] border border-[var(--line)] rounded-md px-2 py-1 disabled:opacity-50">
-              {refreshing ? "Syncing…" : "Refresh"}
-            </button>
-          </div>
-        </div>
-        {weatherError && <div className="text-xs text-[var(--red)]">{weatherError}</div>}
-        {!weatherError && (
-          <div className="font-mono text-xs space-y-2">
-            <div><span className="text-[var(--muted)]">METAR </span>{metarText || "no data yet"}</div>
-            <div><span className="text-[var(--muted)]">TAF </span>{tafText || "no data yet"}</div>
-          </div>
-        )}
-      </Panel>
+
+      {/* ==================================================
+          EXISTING WEATHER
+          ================================================== */}
 
       <Panel className="p-4">
-        <Label>NOTAMs</Label>
-        {notamError && <div className="text-xs text-[var(--amber)]">{notamError}</div>}
-        {!notamError && notamList && notamList.length > 0 && (
-          <div className="flex flex-col gap-2">
-            {notamList.slice(0,8).map((n,i) => (
-              <div key={i} className="font-mono text-[11px] border border-[var(--line)] rounded-md p-2 text-[var(--text)]">
-                {n.raw || JSON.stringify(n)}
-              </div>
-            ))}
+
+        <div className="flex items-center justify-between mb-2">
+
+          <Label>
+            Weather
+          </Label>
+
+          <div className="flex items-center gap-2">
+
+            {updatedAt && (
+
+              <span className="text-[11px] text-[var(--muted)]">
+
+                {timeAgo(updatedAt)}
+
+              </span>
+
+            )}
+
+            <button
+              onClick={refresh}
+              disabled={refreshing}
+              className="text-xs bg-[var(--panel-2)] border border-[var(--line)] rounded-md px-2 py-1 disabled:opacity-50"
+            >
+
+              {refreshing
+                ? "Syncing…"
+                : "Refresh"}
+
+            </button>
+
           </div>
+
+        </div>
+
+
+        {weatherError && (
+
+          <div className="text-xs text-[var(--red)]">
+
+            {weatherError}
+
+          </div>
+
         )}
-        {!notamError && (!notamList || notamList.length===0) && (
-          <div className="text-xs text-[var(--muted)]">No active NOTAMs returned.</div>
+
+
+        {!weatherError && (
+
+          <div className="font-mono text-xs space-y-2">
+
+            <div>
+
+              <span className="text-[var(--muted)]">
+                METAR{" "}
+              </span>
+
+              {metarText || "no data yet"}
+
+            </div>
+
+
+            <div>
+
+              <span className="text-[var(--muted)]">
+                TAF{" "}
+              </span>
+
+              {tafText || "no data yet"}
+
+            </div>
+
+          </div>
+
         )}
+
       </Panel>
+
+
+      {/* ==================================================
+          PLAIN-ENGLISH WEATHER TRANSLATION
+          ================================================== */}
+
+      <Panel className="p-4">
+
+        <Label>
+          Weather translation
+        </Label>
+
+        <div className="text-sm leading-relaxed">
+
+          {weatherTranslation}
+
+        </div>
+
+      </Panel>
+
     </div>
+
   );
-}
+}      
+
+            
+
 
 function AirportDetail({ icao, onClose }) {
   const [data, setData] = useState(null);
