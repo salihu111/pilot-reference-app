@@ -332,42 +332,55 @@ def translate_weather_to_plain_words(metar, taf):
     # Only report values below 5000 m.
     # --------------------------------------------------------
 
-    visibility_values = re.findall(
-        r"(?<!\d)(\d{4})(?!\d)",
-        text
-    )
+    # --------------------------------------------------------
+# VISIBILITY
+#
+# Only accept a standalone 4-digit METAR/TAF visibility
+# token.
+#
+# This prevents:
+#   Q1013      -> being treated as 1013 m visibility
+#   291743Z    -> being treated as visibility
+#   3117/0124  -> being treated as visibility
+#   22009KT    -> being treated as visibility
+# --------------------------------------------------------
 
-    for value in visibility_values:
+visibility_values = re.findall(
+    r"(?<![A-Z0-9/])(\d{4})(?![A-Z0-9/])",
+    text
+)
 
-        vis = int(value)
+for value in visibility_values:
 
-        # Ignore dates / times / pressures etc.
-        if vis == 9999:
-            continue
+    vis = int(value)
 
-        if 0 < vis < 1000:
+    # 9999 = 10 km or more
+    if vis == 9999:
+        continue
 
-            adverse.append(
-                f"very poor visibility ({vis} m)"
-            )
+    if vis < 1000:
 
-            break
+        adverse.append(
+            f"very poor visibility ({vis} m)"
+        )
 
-        elif vis < 3000:
+        break
 
-            adverse.append(
-                f"poor visibility ({vis} m)"
-            )
+    elif vis < 3000:
 
-            break
+        adverse.append(
+            f"poor visibility ({vis} m)"
+        )
 
-        elif vis < 5000:
+        break
 
-            adverse.append(
-                f"reduced visibility ({vis} m)"
-            )
+    elif vis < 5000:
 
-            break
+        adverse.append(
+            f"reduced visibility ({vis} m)"
+        )
+
+        break
 
     # --------------------------------------------------------
     # LOW CLOUD / LOW CEILING
