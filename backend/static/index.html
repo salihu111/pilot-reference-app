@@ -654,7 +654,10 @@ function AirportDetail({ icao, onClose }) {
           </Panel>
         )}
 
-        <WeatherPanel icao={data.icao} initialWeather={data.weather} initialNotams={data.notams} initialUpdatedAt={data.wx_updated_at} />
+     <WeatherPanel
+  icao={data.icao}
+  initialWeather={data.weather}
+  initialUpdatedAt={data.wx_updated_at}/>
 
         {data.attachments && data.attachments.length > 0 && (
           <Panel className="p-4 mt-3">
