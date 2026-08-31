@@ -242,8 +242,9 @@ function DocumentsTab() {
   const [docs, setDocs] = useState([]);
   const [uploading, setUploading] = useState(false);
   const [progress, setProgress] = useState("");
-  const load = () => fetch(`${API}/documents`).then(r=>r.json()).then(setDocs);
-  useEffect(load, []);
+  const load = () => fetch(`${API}/documents`).then(r=>r.json()).then(
+  useEffect(() => { load(); }, []);
+
 
   const onFiles = async (e) => {
     const files = Array.from(e.target.files || []);
@@ -492,8 +493,9 @@ function AirportsTab() {
   const [filter, setFilter] = useState("");
   const [openIcao, setOpenIcao] = useState(null);
 
-  const load = () => fetch(`${API}/airports`).then(r=>r.json()).then(setAirports);
-  useEffect(load, []);
+  const load = () => fetch(`${API}/airports`).then(r=>r.json()).then(
+  useEffect(() => { load(); }, []);
+
 
   const add = async () => {
     if (!form.icao) return;
@@ -596,8 +598,9 @@ function EscapeRoutesTab() {
 function BulletinsTab() {
   const [bulletins, setBulletins] = useState([]);
   const [form, setForm] = useState({ title:"", body:"", severity:"info" });
-  const load = () => fetch(`${API}/bulletins`).then(r=>r.json()).then(setBulletins);
-  useEffect(load, []);
+  const load = () => fetch(`${API}/bulletins`).then(r=>r.json()).then(
+  useEffect(() => { load(); }, []);
+
 
   const create = async () => {
     if (!form.title || !form.body) return;
