@@ -11,3 +11,4 @@ python-dotenv==1.0.1
 pydantic==2.9.2
 requests==2.32.3
 aiosqlite==0.20.0
+feedparser==6.0.11
