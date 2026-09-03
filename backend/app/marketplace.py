@@ -75,9 +75,6 @@ def _ensure_schema():
             CREATE INDEX IF NOT EXISTS idx_marketplace_listings_city
                 ON marketplace_listings(trip_city);
 
-            -- Newer UI fields. ALTER TABLE is guarded below because SQLite
-            -- does not support ADD COLUMN IF NOT EXISTS.
-
             CREATE TABLE IF NOT EXISTS marketplace_bids (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 listing_id INTEGER NOT NULL,
@@ -118,58 +115,7 @@ def _ensure_schema():
             CREATE INDEX IF NOT EXISTS idx_marketplace_messages_thread
                 ON marketplace_messages(thread_id, created_at);
             """)
-            existing = {row[1] for row in conn.execute("PRAGMA table_info(marketplace_listings)").fetchall()}
-            if "item_mode" not in existing:
-                conn.execute("ALTER TABLE marketplace_listings ADD COLUMN item_mode TEXT DEFAULT 'sell'")
-            if "amazon_url" not in existing:
-                conn.execute("ALTER TABLE marketplace_listings ADD COLUMN amazon_url TEXT")
-            if "is_demo" not in existing:
-                conn.execute("ALTER TABLE marketplace_listings ADD COLUMN is_demo INTEGER NOT NULL DEFAULT 0")
-
-            # Seed clearly-labelled sample posts once so a fresh Crew Market
-            # never looks empty. Samples are excluded from My Market.
-            demo_exists = conn.execute(
-                "SELECT 1 FROM marketplace_listings WHERE owner_client_id=? LIMIT 1",
-                ("demo:crew-market",)
-            ).fetchone()
-            if not demo_exists:
-                now = _now()
-                samples = [
-                    ("currency", "USD available in Addis", "Sample: selling USD cash in Addis. Example of a named-rate currency post.", "sell", 500, 154.50, 1),
-                    ("currency", "Looking to buy USD", "Sample: buying USD before an international flight. Crew can make offers.", "buy", 300, 153.80, 1),
-                    ("sell", "Noise-cancelling headset", "Sample item post: lightly used headset, Addis handover.", None, None, None, 0),
-                    ("sell", "Trade cabin bag for backpack", "Sample swap post: looking to exchange a cabin-size bag for a compact crew backpack.", None, None, None, 0),
-                    ("trip", "Anyone on Mumbai layover?", "Sample layover match: can carry a small crew item from Addis.", None, None, None, 0),
-                    ("trip", "Need something picked up in Dubai", "Sample request: looking for crew flying to Dubai who can bring a small item back.", None, None, None, 0),
-                    ("service", "Amazon run — Mumbai", "Sample Amazon run: crew member flying to Mumbai can bring an order back.\nAMAZON PRODUCT: https://www.amazon.com/", None, None, None, 0),
-                    ("service", "Amazon run — Dubai", "Sample Amazon run: looking for crew travelling to Dubai to bring an order.\nAMAZON PRODUCT: https://www.amazon.com/", None, None, None, 0),
-                ]
-                for kind, title, desc, direction, amount, rate, is_currency in samples:
-                    trip_city = None
-                    trip_date = None
-                    item_mode = "sell"
-                    amazon_url = None
-                    if kind == "trip":
-                        if "Mumbai" in title:
-                            trip_city, trip_date = "Mumbai (BOM)", "2026-09-10"
-                        else:
-                            trip_city, trip_date = "Dubai (DXB)", "2026-09-12"
-                    if kind == "sell" and "Trade" in title:
-                        item_mode = "swap"
-                    if kind == "service":
-                        amazon_url = "https://www.amazon.com/"
-                    conn.execute("""
-                        INSERT INTO marketplace_listings
-                        (type,title,description,owner_client_id,price_amount,price_currency,
-                         cur_direction,cur_amount,cur_rate,cur_open,trip_mode,trip_city,trip_date,
-                         trip_note,poster_name,anonymous,contact_phone,contact_email,item_mode,amazon_url,status,created_at,is_demo)
-                        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-                    """, (kind,title,desc,"demo:crew-market",None,"ETB",direction,amount,rate,
-                          1 if is_currency else 0,"request" if kind=="trip" else "none",trip_city,trip_date,
-                          None,"Sample crew",0,None,None,item_mode,amazon_url,"active",now,1))
-                conn.commit()
-            else:
-                conn.commit()
+            conn.commit()
             _schema_ready = True
         finally:
             conn.close()
@@ -183,24 +129,15 @@ def create_listing(*, type: str, title: str, description: str = None,
                    trip_city: str = None, trip_date: str = None,
                    trip_note: str = None, poster_name: str = None,
                    anonymous: bool = False, contact_phone: str = None,
-                   contact_email: str = None, item_mode: str = "sell",
-                   amazon_url: str = None) -> int:
+                   contact_email: str = None) -> int:
     _ensure_schema()
     kind = (_clean(type, 30) or '').lower()
     if kind not in {"buy", "sell", "currency", "trip", "service"}:
         raise ValueError("Invalid marketplace type.")
     title = _clean(title, 180)
     owner = _clean(owner_client_id, 160)
-    # Title is optional in the UI. Generate a useful fallback so older
-    # Telegram clients or direct API calls cannot fail with HTTP 400.
     if not title:
-        title = {
-            "currency": "USD exchange",
-            "trip": "Layover / flight match",
-            "buy": "Crew item wanted",
-            "service": "Crew service / Amazon run",
-            "sell": "Crew item available",
-        }[kind]
+        raise ValueError("A listing title is required.")
     if not owner:
         raise ValueError("A client id is required.")
     if kind == 'currency':
@@ -214,14 +151,13 @@ def create_listing(*, type: str, title: str, description: str = None,
             INSERT INTO marketplace_listings
             (type,title,description,owner_client_id,price_amount,price_currency,
              cur_direction,cur_amount,cur_rate,cur_open,trip_mode,trip_city,trip_date,
-             trip_note,poster_name,anonymous,contact_phone,contact_email,item_mode,amazon_url,status,created_at,is_demo)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+             trip_note,poster_name,anonymous,contact_phone,contact_email,status,created_at)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
         """, (kind,title,_clean(description),owner,price_amount,_clean(price_currency,12),
               _clean(cur_direction,30),cur_amount,cur_rate,1 if cur_open else 0,
               _clean(trip_mode,30) or 'none',_clean(trip_city,120),_clean(trip_date,40),
               _clean(trip_note,1000),_clean(poster_name,120),1 if anonymous else 0,
-              _clean(contact_phone,80),_clean(contact_email,180),
-              _clean(item_mode,20) or 'sell',_clean(amazon_url,1000),'active',_now(),0))
+              _clean(contact_phone,80),_clean(contact_email,180),'active',_now()))
         conn.commit()
         return int(cur.lastrowid)
     finally:
@@ -259,7 +195,7 @@ def list_listings(*, type: str = None, city: str = None, query: str = None,
             item['is_owner']=bool(viewer_client_id and row['owner_client_id']==viewer_client_id)
             if not item['is_owner']:
                 item['contact_phone']=None; item['contact_email']=None
-            item['anonymous']=bool(item['anonymous']); item['cur_open']=bool(item['cur_open']); item['is_demo']=bool(item.get('is_demo', 0))
+            item['anonymous']=bool(item['anonymous']); item['cur_open']=bool(item['cur_open'])
             out.append(item)
         return out
     finally: conn.close()
