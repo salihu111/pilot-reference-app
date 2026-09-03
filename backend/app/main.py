@@ -3,6 +3,7 @@ import shutil
 import asyncio
 import json
 import time
+import urllib.parse
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -59,23 +60,73 @@ telegram_app = None
 
 
 async def start_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    add_subscriber(update.effective_chat.id, update.effective_user.username if update.effective_user else None)
-    if WEBAPP_URL:
-        fresh_url = f"{WEBAPP_URL}?v={int(time.time())}"
-        try:
-            keyboard = InlineKeyboardMarkup(
-                [[InlineKeyboardButton("Open Pilot Reference", web_app=WebAppInfo(url=fresh_url))]]
-            )
-            await update.message.reply_text(
-                "Welcome. Tap below to open the reference dashboard.",
-                reply_markup=keyboard,
-            )
-        except Exception as e:
-            await update.message.reply_text(f"Welcome. Open the dashboard here: {fresh_url}\n\n(button error: {e})")
-    else:
+    """Telegram /start menu with separate Pilot Reference and Crew Market Mini Apps."""
+    user = update.effective_user
+    chat = update.effective_chat
+
+    add_subscriber(
+        chat.id,
+        user.username if user else None,
+    )
+
+    if not WEBAPP_URL:
         await update.message.reply_text(
             "Bot is up, but WEBAPP_URL isn't set yet -- add it in Railway env vars."
         )
+        return
+
+    # Stable marketplace identity for this Telegram user.
+    telegram_client_id = f"tg:{user.id}" if user else f"chat:{chat.id}"
+
+    reference_url = (
+        f"{WEBAPP_URL}?{urllib.parse.urlencode({
+            'telegram': '1',
+            'v': int(time.time()),
+        })}"
+    )
+
+    # Optional override for a separate marketplace domain. Otherwise use the
+    # standalone /marketplace.html page on the same Railway service.
+    marketplace_base = os.getenv("MARKETPLACE_URL")
+    if marketplace_base:
+        marketplace_base = (
+            marketplace_base
+            if marketplace_base.startswith("http")
+            else f"https://{marketplace_base}"
+        )
+    else:
+        marketplace_base = f"{WEBAPP_URL.rstrip('/')}/marketplace.html"
+
+    marketplace_url = (
+        f"{marketplace_base}?{urllib.parse.urlencode({
+            'telegram': '1',
+            'client_id': telegram_client_id,
+            'v': int(time.time()),
+        })}"
+    )
+
+    keyboard = InlineKeyboardMarkup(
+        [
+            [
+                InlineKeyboardButton(
+                    "📚 Pilot Reference",
+                    web_app=WebAppInfo(url=reference_url),
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    "🛍️ Crew Market",
+                    web_app=WebAppInfo(url=marketplace_url),
+                )
+            ],
+        ]
+    )
+
+    await update.message.reply_text(
+        "✈️ Welcome to Pilot Reference\n\n"
+        "Select the application you want to open:",
+        reply_markup=keyboard,
+    )
 
 
 def seed_reference_pdfs_blocking():
