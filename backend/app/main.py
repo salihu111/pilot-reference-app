@@ -23,6 +23,7 @@ from .marketplace import (
     create_listing, list_listings, list_bids, place_bid,
     get_or_create_thread_for_viewer, get_or_create_thread_with,
     list_threads_for_listing, get_thread, add_message, mark_deal_agreed,
+    _ensure_schema as ensure_marketplace_schema,
 )
 
 app = FastAPI(title="Pilot Reference Mini App")
@@ -64,10 +65,15 @@ async def start_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     chat = update.effective_chat
 
-    add_subscriber(
-        chat.id,
-        user.username if user else None,
-    )
+    try:
+        add_subscriber(
+            chat.id,
+            user.username if user else None,
+        )
+    except Exception as exc:
+        # Subscriber registration is useful but must never prevent /start
+        # from showing the two Mini App buttons.
+        print(f"Subscriber registration skipped: {exc}")
 
     if not WEBAPP_URL:
         await update.message.reply_text(
@@ -123,7 +129,7 @@ async def start_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
     await update.message.reply_text(
-        "✈️ Welcome to ET-CREW Reference\n\n"
+        "✈️ Welcome to Pilot Reference\n\n"
         "Select the application you want to open:",
         reply_markup=keyboard,
     )
@@ -165,8 +171,11 @@ def seed_all_blocking():
 
 @app.on_event("startup")
 async def startup():
+    # Initialize all SQLite schemas before accepting Telegram/API traffic.
+    # Marketplace schema creation must never happen inside a normal GET/POST.
     init_db()
-    asyncio.create_task(asyncio.to_thread(seed_all_blocking))
+    ensure_marketplace_schema()
+
     global telegram_app
     if BOT_TOKEN:
         telegram_app = Application.builder().token(BOT_TOKEN).build()
@@ -177,6 +186,14 @@ async def startup():
         print("Telegram bot polling started.")
     else:
         print("TELEGRAM_BOT_TOKEN not set -- bot not started (API still runs).")
+
+    # Start heavy seeders only after the bot is ready. A short delay prevents
+    # startup writes from racing with the first /start request.
+    async def delayed_seed():
+        await asyncio.sleep(5)
+        await asyncio.to_thread(seed_all_blocking)
+
+    asyncio.create_task(delayed_seed())
 
 
 @app.on_event("shutdown")
