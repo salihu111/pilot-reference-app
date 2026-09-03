@@ -123,7 +123,7 @@ async def start_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
     await update.message.reply_text(
-        "✈️ Welcome to Pilot Reference\n\n"
+        "✈️ Welcome to ET-CREW Reference\n\n"
         "Select the application you want to open:",
         reply_markup=keyboard,
     )
