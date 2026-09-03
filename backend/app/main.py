@@ -18,8 +18,12 @@ from .legal_check import check_duty_legality
 from .salary import SalaryInput, calculate
 from .airports import add_airport, list_airports, sync_airport, parse_briefing_fields
 from .bulletins import create_bulletin, list_bulletins, push_bulletin, add_subscriber
-from .marketplace import create_post as create_marketplace_post, list_posts as list_marketplace_posts
 from .news import get_news
+from .marketplace import (
+    create_listing, list_listings, place_bid,
+    get_or_create_thread_for_viewer, get_or_create_thread_with,
+    list_threads_for_listing, get_thread, add_message, mark_deal_agreed,
+)
 
 app = FastAPI(title="Pilot Reference Mini App")
 
@@ -172,6 +176,17 @@ def serve_frontend():
     from serving a stale cached copy after you push a frontend update."""
     return FileResponse(
         os.path.join(STATIC_DIR, "index.html"),
+        headers={"Cache-Control": "no-store, no-cache, must-revalidate"},
+    )
+
+
+@app.get("/marketplace.html")
+def serve_marketplace():
+    """Serves the standalone Layover Market page. The Marketplace tab in
+    the main dashboard (index.html) redirects here with window.location --
+    it's a full page, not an embedded tab, so it gets its own route."""
+    return FileResponse(
+        os.path.join(STATIC_DIR, "marketplace.html"),
         headers={"Cache-Control": "no-store, no-cache, must-revalidate"},
     )
 
@@ -343,22 +358,111 @@ def news(limit: int = 30):
     return {"articles": get_news(limit)}
 
 
-# ---------- Marketplace / crew classifieds ----------
+# ---------- Layover Market: listings ----------
 
-@app.post("/api/marketplace")
-def new_marketplace_post(
-    kind: str = Form(...), item: str = Form(...), country: str = Form(None),
-    amount_usd: float = Form(None), exchange_rate_etb: float = Form(None),
-    notes: str = Form(None), contact: str = Form(None), poster_name: str = Form(None),
+@app.get("/api/marketplace/listings")
+def get_marketplace_listings(type: str = None, city: str = None, query: str = None, client_id: str = None):
+    return list_listings(type=type, city=city, query=query, viewer_client_id=client_id)
+
+
+@app.post("/api/marketplace/listings")
+def post_marketplace_listing(
+    type: str = Form(...), title: str = Form(...), description: str = Form(None),
+    client_id: str = Form(...),
+    price_amount: float = Form(None), price_currency: str = Form(None),
+    cur_direction: str = Form(None), cur_amount: float = Form(None),
+    cur_rate: float = Form(None), cur_open: bool = Form(False),
+    trip_mode: str = Form("none"), trip_city: str = Form(None),
+    trip_date: str = Form(None), trip_note: str = Form(None),
+    poster_name: str = Form(None), anonymous: bool = Form(False),
+    contact_phone: str = Form(None), contact_email: str = Form(None),
 ):
-    pid = create_marketplace_post(kind, item, country, amount_usd, exchange_rate_etb,
-                                   notes, contact, poster_name)
-    return {"id": pid}
+    try:
+        listing_id = create_listing(
+            type=type, title=title, description=description, owner_client_id=client_id,
+            price_amount=price_amount, price_currency=price_currency,
+            cur_direction=cur_direction, cur_amount=cur_amount, cur_rate=cur_rate, cur_open=cur_open,
+            trip_mode=trip_mode, trip_city=trip_city, trip_date=trip_date, trip_note=trip_note,
+            poster_name=poster_name, anonymous=anonymous,
+            contact_phone=contact_phone, contact_email=contact_email,
+        )
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    return {"id": listing_id}
 
 
-@app.get("/api/marketplace")
-def get_marketplace_posts():
-    return list_marketplace_posts()
+# ---------- Layover Market: bids ----------
+
+@app.post("/api/marketplace/listings/{listing_id}/bids")
+def post_marketplace_bid(
+    listing_id: int, client_id: str = Form(...), rate: float = Form(...),
+    bidder_name: str = Form(None), anonymous: bool = Form(False), note: str = Form(None),
+):
+    try:
+        bid_id = place_bid(listing_id, bidder_client_id=client_id, rate=rate,
+                            bidder_name=bidder_name, anonymous=anonymous, note=note)
+    except ValueError as e:
+        raise HTTPException(404, str(e))
+    return {"id": bid_id}
+
+
+# ---------- Layover Market: chat threads ----------
+
+@app.get("/api/marketplace/listings/{listing_id}/chat")
+def get_marketplace_chat(listing_id: int, client_id: str):
+    """Entry point the frontend calls when someone opens the chat panel on
+    a listing. Owners get their inbox of every counterpart thread; anyone
+    else gets (or lazily starts) their one thread with the owner."""
+    conn = get_conn()
+    row = conn.execute("SELECT owner_client_id FROM marketplace_listings WHERE id=?", (listing_id,)).fetchone()
+    conn.close()
+    if not row:
+        raise HTTPException(404, "listing not found")
+    if row["owner_client_id"] == client_id:
+        return {"is_owner": True, "threads": list_threads_for_listing(listing_id, client_id)}
+    return {"is_owner": False, "thread": get_or_create_thread_for_viewer(listing_id, client_id)}
+
+
+@app.get("/api/marketplace/listings/{listing_id}/thread-with")
+def get_marketplace_thread_with(listing_id: int, client_id: str, counterpart_client_id: str):
+    """Owner-only: open the thread with one specific bidder/buyer, e.g.
+    clicking "message" on a particular bid."""
+    try:
+        return get_or_create_thread_with(listing_id, owner_client_id=client_id, counterpart_client_id=counterpart_client_id)
+    except PermissionError as e:
+        raise HTTPException(403, str(e))
+    except ValueError as e:
+        raise HTTPException(404, str(e))
+
+
+@app.get("/api/marketplace/threads/{thread_id}")
+def get_marketplace_thread(thread_id: int, client_id: str):
+    try:
+        return get_thread(thread_id, client_id)
+    except PermissionError as e:
+        raise HTTPException(403, str(e))
+    except ValueError as e:
+        raise HTTPException(404, str(e))
+
+
+@app.post("/api/marketplace/threads/{thread_id}/messages")
+def post_marketplace_message(thread_id: int, client_id: str = Form(...), text: str = Form(...)):
+    try:
+        return add_message(thread_id, client_id, text)
+    except PermissionError as e:
+        raise HTTPException(403, str(e))
+    except ValueError as e:
+        raise HTTPException(404, str(e))
+
+
+@app.post("/api/marketplace/threads/{thread_id}/agree")
+def post_marketplace_agree(thread_id: int, client_id: str = Form(...)):
+    try:
+        return mark_deal_agreed(thread_id, client_id)
+    except PermissionError as e:
+        raise HTTPException(403, str(e))
+    except ValueError as e:
+        raise HTTPException(404, str(e))
 
 
 @app.get("/api/overview")
