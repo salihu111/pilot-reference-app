@@ -1,0 +1,829 @@
+<!doctype html>
+<html lang="en" data-bs-theme="dark">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+<title>Layover Market — Crew Exchange</title>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@600;700;800&family=IBM+Plex+Mono:wght@400;500;600&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+<link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
+
+<style>
+  :root{
+    --lm-bg:#0b0f14;
+    --lm-surface:#121822;
+    --lm-surface-2:#161f2c;
+    --lm-border:#243349;
+    --lm-text:#e9eef4;
+    --lm-muted:#8a97a8;
+    --lm-amber:#f2b134;
+    --lm-amber-dim:#c99327;
+    --lm-teal:#2dd4bf;
+    --lm-rose:#fb7185;
+    --lm-green:#4ade80;
+    --bs-body-bg: var(--lm-bg);
+    --bs-body-color: var(--lm-text);
+  }
+  body{
+    background:
+      radial-gradient(900px 420px at 12% -8%, rgba(242,177,52,0.07), transparent 60%),
+      var(--lm-bg);
+    font-family:'Inter',-apple-system,sans-serif;
+  }
+  .font-display{ font-family:'Archivo','Inter',sans-serif; letter-spacing:-0.01em; }
+  .font-mono{ font-family:'IBM Plex Mono',ui-monospace,monospace; }
+
+  .navbar-lm{ background:rgba(11,15,20,0.85); backdrop-filter: blur(10px); border-bottom:1px solid var(--lm-border); }
+  .brand-mark{ width:34px; height:34px; border-radius:8px; background:linear-gradient(150deg,var(--lm-amber),var(--lm-amber-dim)); display:grid; place-items:center; color:#1a1204; font-weight:800; }
+
+  /* split-flap style ticker strip -- justified by the "departure board" metaphor */
+  .board-strip{ background:var(--lm-surface); border:1px solid var(--lm-border); border-radius:10px; }
+  .board-cell{ padding:.85rem 1rem; border-right:1px solid var(--lm-border); }
+  .board-cell:last-child{ border-right:none; }
+  .board-cell .val{ font-family:'IBM Plex Mono'; font-size:1.35rem; font-weight:600; color:var(--lm-amber); line-height:1; }
+  .board-cell .lbl{ font-size:.72rem; color:var(--lm-muted); margin-top:.25rem; }
+
+  .lm-card{ background:var(--lm-surface); border:1px solid var(--lm-border); border-radius:12px; transition:border-color .15s ease; }
+  .lm-card:hover{ border-color:#33455f; }
+  .type-tag{ font-family:'IBM Plex Mono'; font-size:.68rem; font-weight:600; letter-spacing:.02em; padding:.2rem .55rem; border-radius:5px; border:1px solid; text-transform:uppercase; }
+  .tag-sell{ color:var(--lm-teal); border-color:#1b4f49; background:#0e2320; }
+  .tag-trade{ color:#93c5fd; border-color:#1e3a5f; background:#0e1c2e; }
+  .tag-free{ color:var(--lm-green); border-color:#1e4a30; background:#0f1f16; }
+  .tag-buy{ color:var(--lm-amber); border-color:#4a3a12; background:#211a08; }
+  .tag-sellcur{ color:var(--lm-rose); border-color:#4a1e28; background:#210f13; }
+
+  .chip-trip{ font-family:'IBM Plex Mono'; font-size:.72rem; color:var(--lm-muted); background:var(--lm-surface-2); border:1px solid var(--lm-border); border-radius:6px; padding:.2rem .5rem; display:inline-flex; align-items:center; gap:.35rem; }
+
+  .filter-chip{ border:1px solid var(--lm-border); background:transparent; color:var(--lm-muted); border-radius:999px; padding:.35rem .9rem; font-size:.85rem; }
+  .filter-chip.active{ background:var(--lm-amber); border-color:var(--lm-amber); color:#1a1204; font-weight:600; }
+
+  .form-control, .form-select{ background:var(--lm-surface-2); border-color:var(--lm-border); color:var(--lm-text); }
+  .form-control:focus, .form-select:focus{ background:var(--lm-surface-2); color:var(--lm-text); border-color:var(--lm-amber); box-shadow:0 0 0 .2rem rgba(242,177,52,.15); }
+  .form-control::placeholder{ color:#5c6b80; }
+
+  .btn-lm-primary{ background:var(--lm-amber); border-color:var(--lm-amber); color:#1a1204; font-weight:600; }
+  .btn-lm-primary:hover{ background:#e0a52b; border-color:#e0a52b; color:#1a1204; }
+  .btn-lm-outline{ border:1px solid var(--lm-border); color:var(--lm-text); background:transparent; }
+  .btn-lm-outline:hover{ background:var(--lm-surface-2); color:var(--lm-text); }
+
+  .anon-avatar{ width:30px; height:30px; border-radius:50%; display:grid; place-items:center; font-size:.78rem; font-weight:600; background:var(--lm-surface-2); border:1px solid var(--lm-border); color:var(--lm-muted); }
+
+  .bid-row{ border-bottom:1px solid var(--lm-border); }
+  .bid-row:last-child{ border-bottom:none; }
+  .bid-rate{ font-family:'IBM Plex Mono'; font-weight:600; color:var(--lm-amber); font-size:1.05rem; }
+
+  .chat-msg{ max-width:82%; padding:.55rem .8rem; border-radius:12px; font-size:.9rem; line-height:1.4; }
+  .chat-msg.mine{ background:var(--lm-amber); color:#1a1204; margin-left:auto; border-bottom-right-radius:3px; }
+  .chat-msg.theirs{ background:var(--lm-surface-2); border:1px solid var(--lm-border); margin-right:auto; border-bottom-left-radius:3px; }
+  .chat-meta{ font-size:.68rem; color:var(--lm-muted); margin-top:.15rem; }
+
+  .privacy-note{ font-size:.78rem; color:var(--lm-muted); background:var(--lm-surface-2); border:1px solid var(--lm-border); border-radius:8px; padding:.6rem .75rem; }
+  .contact-locked{ font-size:.82rem; color:var(--lm-muted); border:1px dashed var(--lm-border); border-radius:8px; padding:.6rem .75rem; }
+  .contact-revealed{ font-size:.85rem; color:var(--lm-text); border:1px solid #1e4a30; background:#0f1f16; border-radius:8px; padding:.6rem .75rem; }
+
+  .empty-state{ color:var(--lm-muted); padding:2.5rem 1rem; text-align:center; border:1px dashed var(--lm-border); border-radius:12px; }
+
+  .id-pill{ font-size:.75rem; background:var(--lm-surface-2); border:1px solid var(--lm-border); border-radius:999px; padding:.25rem .7rem; color:var(--lm-muted); }
+
+  ::-webkit-scrollbar{ width:7px; height:7px; }
+  ::-webkit-scrollbar-thumb{ background:var(--lm-border); border-radius:4px; }
+</style>
+</head>
+<body>
+
+<!-- ============ NAVBAR ============ -->
+<nav class="navbar navbar-lm sticky-top py-2">
+  <div class="container-xxl d-flex align-items-center gap-3">
+    <div class="d-flex align-items-center gap-2">
+      <div class="brand-mark"><i class="bi bi-arrow-left-right"></i></div>
+      <div>
+        <div class="font-display fw-bold fs-5 lh-1">Layover Market</div>
+        <div class="text-secondary" style="font-size:.72rem;">crew-to-crew exchange</div>
+      </div>
+    </div>
+    <div class="flex-grow-1 mx-2 mx-md-4">
+      <div class="input-group">
+        <span class="input-group-text bg-transparent border-secondary-subtle" style="border-color:var(--lm-border)!important;"><i class="bi bi-search text-secondary"></i></span>
+        <input id="searchInput" type="text" class="form-control" placeholder="Search items, currency, cities…">
+      </div>
+    </div>
+    <div class="d-flex align-items-center gap-2">
+      <span id="idPill" class="id-pill d-none d-sm-inline-flex align-items-center gap-1" role="button" data-bs-toggle="modal" data-bs-target="#identityModal">
+        <i class="bi bi-person-circle"></i><span id="idPillText">Set your name</span>
+      </span>
+      <button class="btn btn-lm-primary btn-sm px-3" data-bs-toggle="modal" data-bs-target="#postModal">
+        <i class="bi bi-plus-lg"></i> Post
+      </button>
+    </div>
+  </div>
+</nav>
+
+<div class="container-xxl py-4">
+
+  <!-- ============ INTRO / BOARD STRIP ============ -->
+  <div class="d-flex flex-column flex-lg-row justify-content-between align-items-lg-end gap-3 mb-3">
+    <div>
+      <h1 class="font-display fw-800 mb-1" style="font-size:1.7rem;">What crew are trading right now</h1>
+      <p class="text-secondary mb-0" style="max-width:640px;">Post what you have, what you need, or a currency request tied to your next layover. Contact stays private until you agree a deal in chat.</p>
+    </div>
+    <div class="board-strip d-flex flex-wrap">
+      <div class="board-cell"><div class="val" id="statListings">0</div><div class="lbl">open listings</div></div>
+      <div class="board-cell"><div class="val" id="statBids">0</div><div class="lbl">open bids</div></div>
+      <div class="board-cell"><div class="val" id="statLayovers">0</div><div class="lbl">tagged layovers</div></div>
+      <div class="board-cell"><div class="val" id="statCities">0</div><div class="lbl">cities</div></div>
+    </div>
+  </div>
+
+  <!-- ============ CURRENCY BID BOARD ============ -->
+  <div class="d-flex align-items-center justify-content-between mb-2 mt-4">
+    <h2 class="font-display fw-700 mb-0" style="font-size:1.15rem;"><i class="bi bi-currency-exchange me-1" style="color:var(--lm-amber);"></i> Currency Bid Board</h2>
+    <button class="btn btn-lm-outline btn-sm" onclick="openPostModal('currency')"><i class="bi bi-plus-lg"></i> Post a currency request</button>
+  </div>
+  <p class="text-secondary small mb-3">Post that you're buying or selling USD and name a rate — or leave it open and let crew bid. Deals stay anonymous and in-chat until you accept.</p>
+  <div id="currencyBoard" class="d-flex flex-column gap-2 mb-5"></div>
+
+  <!-- ============ ITEM BOARD ============ -->
+  <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-2 mt-2">
+    <h2 class="font-display fw-700 mb-0" style="font-size:1.15rem;"><i class="bi bi-bag me-1" style="color:var(--lm-teal);"></i> Item Board</h2>
+    <div class="d-flex gap-2 flex-wrap" id="typeFilters">
+      <button class="filter-chip active" data-filter="all">All</button>
+      <button class="filter-chip" data-filter="sell">For Sale</button>
+      <button class="filter-chip" data-filter="trade">Trade / Swap</button>
+      <button class="filter-chip" data-filter="free">Free / Pay it forward</button>
+    </div>
+  </div>
+  <div class="d-flex gap-2 mb-3">
+    <input id="cityFilter" class="form-control form-control-sm" style="max-width:220px;" placeholder="Filter by city…">
+  </div>
+  <div id="itemGrid" class="row g-3 mb-5"></div>
+
+</div>
+
+<!-- ============ POST MODAL ============ -->
+<div class="modal fade" id="postModal" tabindex="-1">
+  <div class="modal-dialog modal-lg modal-dialog-scrollable">
+    <div class="modal-content" style="background:var(--lm-surface); border:1px solid var(--lm-border);">
+      <div class="modal-header" style="border-color:var(--lm-border);">
+        <h5 class="modal-title font-display fw-700">New post</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <form id="postForm">
+
+          <label class="form-label small text-secondary">Listing type</label>
+          <div class="btn-group w-100 mb-3" role="group">
+            <input type="radio" class="btn-check" name="ptype" id="pt_sell" value="sell" checked>
+            <label class="btn btn-lm-outline" for="pt_sell">Sell</label>
+            <input type="radio" class="btn-check" name="ptype" id="pt_trade" value="trade">
+            <label class="btn btn-lm-outline" for="pt_trade">Trade / Swap</label>
+            <input type="radio" class="btn-check" name="ptype" id="pt_free" value="free">
+            <label class="btn btn-lm-outline" for="pt_free">Free</label>
+            <input type="radio" class="btn-check" name="ptype" id="pt_currency" value="currency">
+            <label class="btn btn-lm-outline" for="pt_currency">Currency Bid</label>
+          </div>
+
+          <!-- Currency-specific fields -->
+          <div id="fields_currency" class="d-none">
+            <div class="row g-2 mb-3">
+              <div class="col-6">
+                <label class="form-label small text-secondary">Direction</label>
+                <select class="form-select" id="curDirection">
+                  <option value="buy">I'm buying USD</option>
+                  <option value="sell">I'm selling USD</option>
+                </select>
+              </div>
+              <div class="col-6">
+                <label class="form-label small text-secondary">Amount (USD)</label>
+                <input type="number" min="1" class="form-control" id="curAmount" placeholder="e.g. 300">
+              </div>
+              <div class="col-6">
+                <label class="form-label small text-secondary">Rate offered (ETB per $1)</label>
+                <input type="number" min="0" step="0.01" class="form-control" id="curRate" placeholder="e.g. 148.50">
+              </div>
+              <div class="col-6 d-flex align-items-end">
+                <div class="form-check">
+                  <input class="form-check-input" type="checkbox" id="curOpen">
+                  <label class="form-check-label small" for="curOpen">Open to offers — let crew bid instead of naming a rate</label>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Item fields -->
+          <div id="fields_item">
+            <label class="form-label small text-secondary">Title</label>
+            <input class="form-control mb-3" id="itemTitle" placeholder="e.g. iPhone charger (UK plug), 2 boxes of paracetamol…">
+          </div>
+
+          <label class="form-label small text-secondary">Description</label>
+          <textarea class="form-control mb-3" id="itemDesc" rows="2" placeholder="Details, condition, what you're hoping to trade for, etc."></textarea>
+
+          <!-- Price / fee (hidden for currency, since rate covers it) -->
+          <div id="fields_price" class="row g-2 mb-3">
+            <div class="col-6">
+              <label class="form-label small text-secondary" id="priceLabel">Price</label>
+              <input type="number" min="0" step="0.01" class="form-control" id="itemPrice" placeholder="0.00">
+            </div>
+            <div class="col-6">
+              <label class="form-label small text-secondary">Currency</label>
+              <select class="form-select" id="itemCurrency">
+                <option value="USD">USD</option>
+                <option value="ETB">ETB</option>
+              </select>
+            </div>
+          </div>
+
+          <hr style="border-color:var(--lm-border);">
+
+          <label class="form-label small text-secondary">Trip / location tagging</label>
+          <select class="form-select mb-2" id="tripMode">
+            <option value="none">No location tag</option>
+            <option value="layover">I have this — tag an upcoming layover city</option>
+            <option value="request">I need this — request it from a destination</option>
+          </select>
+          <div id="tripFields" class="row g-2 mb-3 d-none">
+            <div class="col-6">
+              <label class="form-label small text-secondary" id="tripCityLabel">City</label>
+              <input class="form-control" id="tripCity" placeholder="e.g. Mumbai (BOM)">
+            </div>
+            <div class="col-6">
+              <label class="form-label small text-secondary" id="tripDateLabel">Date</label>
+              <input type="date" class="form-control" id="tripDate">
+            </div>
+            <div class="col-12">
+              <input class="form-control" id="tripNote" placeholder="Note, e.g. &quot;planning to get this from India on Sept 10&quot;">
+            </div>
+          </div>
+
+          <hr style="border-color:var(--lm-border);">
+
+          <label class="form-label small text-secondary">Your name</label>
+          <input class="form-control mb-2" id="posterName" placeholder="Shown on your post (unless anonymous)">
+          <div class="form-check mb-3">
+            <input class="form-check-input" type="checkbox" id="postAnon">
+            <label class="form-check-label small" for="postAnon">Post anonymously — hide my name from other crew, shown only as "Anonymous crew"</label>
+          </div>
+
+          <label class="form-label small text-secondary">Contact (private)</label>
+          <div class="row g-2 mb-2">
+            <div class="col-6"><input class="form-control" id="posterPhone" placeholder="Phone (optional)"></div>
+            <div class="col-6"><input class="form-control" id="posterEmail" placeholder="Email (optional)"></div>
+          </div>
+          <div class="privacy-note mb-1">
+            <i class="bi bi-shield-lock me-1"></i>
+            Your phone and email are never shown on the public post. Other crew can only reach you through in-app chat,
+            and your contact details stay hidden even there until you mark a deal as agreed.
+          </div>
+        </form>
+      </div>
+      <div class="modal-footer" style="border-color:var(--lm-border);">
+        <button class="btn btn-lm-outline" data-bs-dismiss="modal">Cancel</button>
+        <button class="btn btn-lm-primary" id="submitPost"><i class="bi bi-send"></i> Post to board</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ IDENTITY MODAL (lightweight, local-only "who am I") ============ -->
+<div class="modal fade" id="identityModal" tabindex="-1">
+  <div class="modal-dialog modal-sm">
+    <div class="modal-content" style="background:var(--lm-surface); border:1px solid var(--lm-border);">
+      <div class="modal-header" style="border-color:var(--lm-border);">
+        <h6 class="modal-title font-display fw-700">Your name</h6>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <p class="small text-secondary">Used to label your own posts, bids, and chat messages on this device.</p>
+        <input class="form-control" id="myNameInput" placeholder="e.g. Selam T.">
+      </div>
+      <div class="modal-footer" style="border-color:var(--lm-border);">
+        <button class="btn btn-lm-primary w-100" id="saveIdentity">Save</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ CHAT OFFCANVAS ============ -->
+<div class="offcanvas offcanvas-end" tabindex="-1" id="chatPanel" style="background:var(--lm-surface); border-left:1px solid var(--lm-border); width:400px;">
+  <div class="offcanvas-header" style="border-bottom:1px solid var(--lm-border);">
+    <div>
+      <div class="fw-600" id="chatTitle">Chat</div>
+      <div class="text-secondary small" id="chatSubtitle"></div>
+    </div>
+    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="offcanvas"></button>
+  </div>
+  <div class="offcanvas-body d-flex flex-column p-3">
+    <div id="chatContactBox" class="mb-2"></div>
+    <div id="chatMessages" class="flex-grow-1 d-flex flex-column gap-2 overflow-auto mb-2" style="min-height:200px;"></div>
+    <div class="d-flex gap-2 mb-2">
+      <button class="btn btn-sm btn-lm-outline flex-grow-1" id="markDealBtn"><i class="bi bi-handshake"></i> Mark deal agreed</button>
+    </div>
+    <div class="input-group">
+      <input class="form-control" id="chatInput" placeholder="Message about this listing…">
+      <button class="btn btn-lm-primary" id="chatSendBtn"><i class="bi bi-send"></i></button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ BID MODAL (for currency listings) ============ -->
+<div class="modal fade" id="bidModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content" style="background:var(--lm-surface); border:1px solid var(--lm-border);">
+      <div class="modal-header" style="border-color:var(--lm-border);">
+        <h6 class="modal-title font-display fw-700" id="bidModalTitle">Place a bid</h6>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <label class="form-label small text-secondary">Your rate (ETB per $1)</label>
+        <input type="number" min="0" step="0.01" class="form-control mb-2" id="bidRate" placeholder="e.g. 149.00">
+        <label class="form-label small text-secondary">Note (optional)</label>
+        <input class="form-control mb-2" id="bidNote" placeholder="e.g. can meet in Bole on arrival">
+        <div class="form-check mb-2">
+          <input class="form-check-input" type="checkbox" id="bidAnon">
+          <label class="form-check-label small" for="bidAnon">Bid anonymously</label>
+        </div>
+      </div>
+      <div class="modal-footer" style="border-color:var(--lm-border);">
+        <button class="btn btn-lm-outline" data-bs-dismiss="modal">Cancel</button>
+        <button class="btn btn-lm-primary" id="submitBid">Place bid</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+/* ------------------------------------------------------------------ */
+/* State -- persisted client-side only (localStorage). This page has  */
+/* no backend of its own yet: it's a self-contained prototype of the  */
+/* bid board / privacy / layover-tagging flows. Wiring it to the real */
+/* FastAPI service (real accounts, cross-device chat, only-the-poster */
+/* can accept a bid) is a separate backend step.                      */
+/* ------------------------------------------------------------------ */
+
+const STORAGE_KEY = "layover_market_v1";
+const IDENTITY_KEY = "layover_market_me";
+
+function uid(){ return Math.random().toString(36).slice(2,10); }
+function timeAgo(ts){
+  const s = Math.max(0, Math.round((Date.now()-ts)/1000));
+  if (s<60) return "just now";
+  const m = Math.round(s/60); if (m<60) return `${m}m ago`;
+  const h = Math.round(m/60); if (h<24) return `${h}h ago`;
+  return `${Math.round(h/24)}d ago`;
+}
+function fmtDate(iso){
+  if (!iso) return "";
+  const d = new Date(iso+"T00:00:00");
+  return d.toLocaleDateString(undefined,{month:"short", day:"numeric"});
+}
+function esc(s){ return (s||"").replace(/[&<>"']/g, m => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[m])); }
+
+function loadState(){
+  try { const raw = localStorage.getItem(STORAGE_KEY); if (raw) return JSON.parse(raw); } catch(e){}
+  return seedState();
+}
+function saveState(){ localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }
+
+function seedState(){
+  const now = Date.now();
+  const s = { listings: [
+    {
+      id: uid(), type:"currency", title:"Buying $300 USD",
+      description:"Need USD cash before a Bangkok layover.",
+      price:null,
+      curDirection:"buy", curAmount:300, curRate:148.5, curOpen:false,
+      trip:{ mode:"layover", city:"Bangkok (BKK)", date: new Date(now+6*86400000).toISOString().slice(0,10), note:"landing Thursday, can meet at crew hotel" },
+      posterName:"Dawit M.", anonymous:false,
+      contact:{phone:"+251911000111", email:"dawit@example.com"},
+      createdAt: now-2*3600000, messages:[], dealAgreed:false,
+      bids:[ { id: uid(), bidderName:"Anonymous crew", anonymous:true, rate:149.2, note:"can do Bole arrivals hall", ts: now-1800000, accepted:false } ]
+    },
+    {
+      id: uid(), type:"currency", title:"Selling $150 USD",
+      description:"Extra per-diem cash, open to offers.",
+      price:null,
+      curDirection:"sell", curAmount:150, curRate:null, curOpen:true,
+      trip:{ mode:"none" },
+      posterName:"", anonymous:true,
+      contact:{phone:"", email:"tesfaye@example.com"},
+      createdAt: now-5*3600000, messages:[], dealAgreed:false,
+      bids:[]
+    },
+    {
+      id: uid(), type:"sell", title:"Rimowa cabin bag, lightly used",
+      description:"Great condition, one small scuff on the corner. Selling before I switch to a duffel.",
+      price:{amount:180, currency:"USD"},
+      trip:{ mode:"none" },
+      posterName:"Selam K.", anonymous:false,
+      contact:{phone:"+251911222333", email:""},
+      createdAt: now-26*3600000, messages:[], dealAgreed:false, bids:[]
+    },
+    {
+      id: uid(), type:"trade", title:"Melatonin (US box) for Ambien strips",
+      description:"Have a full US box of melatonin, looking to trade for sleep aids available locally.",
+      price:null,
+      trip:{ mode:"none" },
+      posterName:"", anonymous:true,
+      contact:{phone:"", email:""},
+      createdAt: now-40*3600000, messages:[], dealAgreed:false, bids:[]
+    },
+    {
+      id: uid(), type:"free", title:"Adapter plugs, various regions",
+      description:"Cleaning out my kit bag — free to whoever needs them, just cover nothing, pay it forward.",
+      price:null,
+      trip:{ mode:"none" },
+      posterName:"Hana A.", anonymous:false,
+      contact:{phone:"", email:"hana@example.com"},
+      createdAt: now-3*3600000, messages:[], dealAgreed:false, bids:[]
+    },
+    {
+      id: uid(), type:"trade", title:"Requesting: prenatal vitamins from the US",
+      description:"Local pharmacy is out of stock. Happy to pay a sourcing fee.",
+      price:{amount:15, currency:"USD"},
+      trip:{ mode:"request", city:"New York (JFK)", date: new Date(now+10*86400000).toISOString().slice(0,10), note:"needed by mid next month" },
+      posterName:"", anonymous:true,
+      contact:{phone:"", email:""},
+      createdAt: now-8*3600000, messages:[], dealAgreed:false, bids:[]
+    }
+  ]};
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(s));
+  return s;
+}
+
+let state = loadState();
+let myName = localStorage.getItem(IDENTITY_KEY) || "";
+let activeChatListingId = null;
+let activeBidListingId = null;
+let currentFilter = "all";
+
+/* ------------------------------ Identity ------------------------------ */
+function refreshIdentityPill(){
+  document.getElementById("idPillText").textContent = myName ? myName : "Set your name";
+}
+document.getElementById("saveIdentity").addEventListener("click", () => {
+  myName = document.getElementById("myNameInput").value.trim();
+  localStorage.setItem(IDENTITY_KEY, myName);
+  refreshIdentityPill();
+  bootstrap.Modal.getInstance(document.getElementById("identityModal")).hide();
+});
+document.getElementById("identityModal").addEventListener("show.bs.modal", () => {
+  document.getElementById("myNameInput").value = myName;
+});
+
+/* ------------------------------ Stats ------------------------------ */
+function renderStats(){
+  const listings = state.listings;
+  const bids = listings.reduce((n,l)=> n + (l.bids ? l.bids.length : 0), 0);
+  const layovers = listings.filter(l => l.trip && l.trip.mode !== "none").length;
+  const cities = new Set(listings.filter(l=>l.trip && l.trip.mode!=="none").map(l=>l.trip.city)).size;
+  document.getElementById("statListings").textContent = listings.length;
+  document.getElementById("statBids").textContent = bids;
+  document.getElementById("statLayovers").textContent = layovers;
+  document.getElementById("statCities").textContent = cities;
+}
+
+/* ------------------------------ Currency board ------------------------------ */
+function currencyCard(l){
+  const dirTag = l.curDirection === "buy"
+    ? `<span class="type-tag tag-buy"><i class="bi bi-arrow-down-circle"></i> buying usd</span>`
+    : `<span class="type-tag tag-sellcur"><i class="bi bi-arrow-up-circle"></i> selling usd</span>`;
+  const posterLabel = l.anonymous ? "Anonymous crew" : (l.posterName || "Crew member");
+  const rateStr = l.curOpen
+    ? `<span class="text-secondary">open to offers</span>`
+    : `<span class="bid-rate">${l.curRate ? l.curRate.toFixed(2) : "—"} ETB</span><span class="text-secondary"> / $1</span>`;
+  const bids = (l.bids||[]).slice().sort((a,b)=> l.curDirection==="buy" ? a.rate-b.rate : b.rate-a.rate);
+
+  const bidsHtml = bids.length ? bids.map(b => `
+    <div class="d-flex justify-content-between align-items-center py-2 bid-row">
+      <div>
+        <div class="small">${esc(b.bidderName)}</div>
+        <div class="text-secondary" style="font-size:.72rem;">${esc(b.note||"")} · ${timeAgo(b.ts)}</div>
+      </div>
+      <div class="d-flex align-items-center gap-2">
+        <span class="bid-rate">${b.rate.toFixed(2)} ETB</span>
+        <button class="btn btn-sm btn-lm-outline" onclick="openChat('${l.id}', '${b.id}')"><i class="bi bi-chat-dots"></i></button>
+      </div>
+    </div>`).join("") : `<div class="text-secondary small py-2">No bids yet — be the first.</div>`;
+
+  const tripHtml = tripChip(l.trip);
+
+  return `
+  <div class="lm-card p-3">
+    <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-2">
+      <div class="d-flex align-items-center gap-2 flex-wrap">
+        ${dirTag}
+        <span class="fw-600">${esc(l.title)}</span>
+      </div>
+      <div>${rateStr}</div>
+    </div>
+    <div class="text-secondary small mb-2">${esc(l.description||"")}</div>
+    <div class="d-flex flex-wrap align-items-center gap-2 mb-2">
+      ${tripHtml}
+      <span class="chip-trip"><i class="bi bi-person"></i> ${esc(posterLabel)}</span>
+      <span class="chip-trip"><i class="bi bi-clock-history"></i> ${timeAgo(l.createdAt)}</span>
+    </div>
+    <div class="accordion accordion-flush" id="bidacc_${l.id}">
+      <div class="accordion-item" style="background:transparent; border-color:var(--lm-border);">
+        <h2 class="accordion-header">
+          <button class="accordion-button collapsed py-2 px-0 bg-transparent text-secondary small" type="button" data-bs-toggle="collapse" data-bs-target="#bidcol_${l.id}" style="box-shadow:none;">
+            ${bids.length} bid${bids.length===1?"":"s"}
+          </button>
+        </h2>
+        <div id="bidcol_${l.id}" class="accordion-collapse collapse">
+          <div class="accordion-body px-0 pt-0">${bidsHtml}</div>
+        </div>
+      </div>
+    </div>
+    <div class="d-flex gap-2 mt-2">
+      <button class="btn btn-sm btn-lm-primary" onclick="openBidModal('${l.id}')"><i class="bi bi-hand-index-thumb"></i> Place a bid</button>
+      <button class="btn btn-sm btn-lm-outline" onclick="openChat('${l.id}')"><i class="bi bi-chat-dots"></i> Chat with poster</button>
+    </div>
+  </div>`;
+}
+
+function renderCurrencyBoard(){
+  const list = state.listings.filter(l => l.type === "currency");
+  const el = document.getElementById("currencyBoard");
+  el.innerHTML = list.length ? list.map(currencyCard).join("") :
+    `<div class="empty-state">No currency requests posted yet — post one above to start the board.</div>`;
+}
+
+/* ------------------------------ Item board ------------------------------ */
+function tripChip(trip){
+  if (!trip || trip.mode === "none") return "";
+  if (trip.mode === "layover"){
+    return `<span class="chip-trip"><i class="bi bi-airplane"></i> layover ${esc(trip.city)} · ${fmtDate(trip.date)}</span>`;
+  }
+  return `<span class="chip-trip"><i class="bi bi-signpost-2"></i> requesting from ${esc(trip.city)} · needed ${fmtDate(trip.date)}</span>`;
+}
+
+function typeTag(type){
+  const map = {
+    sell:{cls:"tag-sell", label:"for sale", icon:"bi-tag"},
+    trade:{cls:"tag-trade", label:"trade / swap", icon:"bi-arrow-left-right"},
+    free:{cls:"tag-free", label:"free", icon:"bi-gift"},
+  };
+  const m = map[type] || map.sell;
+  return `<span class="type-tag ${m.cls}"><i class="bi ${m.icon}"></i> ${m.label}</span>`;
+}
+
+function itemCard(l){
+  const posterLabel = l.anonymous ? "Anonymous crew" : (l.posterName || "Crew member");
+  const priceHtml = l.price
+    ? `<span class="bid-rate">${l.price.amount} ${l.price.currency}</span>`
+    : (l.type==="free" ? `<span class="text-secondary">free</span>` : "");
+  return `
+  <div class="col-12 col-md-6 col-lg-4">
+    <div class="lm-card p-3 h-100 d-flex flex-column">
+      <div class="d-flex justify-content-between align-items-start mb-2">
+        ${typeTag(l.type)}
+        ${priceHtml}
+      </div>
+      <div class="fw-600 mb-1">${esc(l.title)}</div>
+      <div class="text-secondary small mb-2 flex-grow-1">${esc(l.description||"")}</div>
+      <div class="d-flex flex-wrap gap-2 mb-2">
+        ${tripChip(l.trip)}
+      </div>
+      <div class="d-flex justify-content-between align-items-center mt-auto pt-2" style="border-top:1px solid var(--lm-border);">
+        <div class="d-flex align-items-center gap-2">
+          <span class="anon-avatar">${l.anonymous ? '<i class="bi bi-incognito"></i>' : esc((l.posterName||"C")[0].toUpperCase())}</span>
+          <div>
+            <div class="small">${esc(posterLabel)}</div>
+            <div class="text-secondary" style="font-size:.7rem;">${timeAgo(l.createdAt)}</div>
+          </div>
+        </div>
+        <button class="btn btn-sm btn-lm-outline" onclick="openChat('${l.id}')"><i class="bi bi-chat-dots"></i> Chat</button>
+      </div>
+    </div>
+  </div>`;
+}
+
+function renderItemGrid(){
+  const city = document.getElementById("cityFilter").value.trim().toLowerCase();
+  const query = document.getElementById("searchInput").value.trim().toLowerCase();
+  let list = state.listings.filter(l => l.type !== "currency");
+  if (currentFilter !== "all") list = list.filter(l => l.type === currentFilter);
+  if (city) list = list.filter(l => l.trip && l.trip.city && l.trip.city.toLowerCase().includes(city));
+  if (query) list = list.filter(l => (l.title+" "+(l.description||"")).toLowerCase().includes(query));
+  list = list.slice().sort((a,b)=> b.createdAt - a.createdAt);
+  const el = document.getElementById("itemGrid");
+  el.innerHTML = list.length ? list.map(itemCard).join("") :
+    `<div class="col-12"><div class="empty-state">No listings match these filters yet.</div></div>`;
+}
+
+function renderAll(){
+  renderStats();
+  renderCurrencyBoard();
+  renderItemGrid();
+}
+
+/* ------------------------------ Filters ------------------------------ */
+document.getElementById("typeFilters").addEventListener("click", (e) => {
+  const btn = e.target.closest(".filter-chip");
+  if (!btn) return;
+  document.querySelectorAll("#typeFilters .filter-chip").forEach(b=>b.classList.remove("active"));
+  btn.classList.add("active");
+  currentFilter = btn.dataset.filter;
+  renderItemGrid();
+});
+document.getElementById("cityFilter").addEventListener("input", renderItemGrid);
+document.getElementById("searchInput").addEventListener("input", () => { renderItemGrid(); renderCurrencyBoard(); });
+
+/* ------------------------------ Post form ------------------------------ */
+const typeRadios = document.querySelectorAll('input[name="ptype"]');
+function currentPostType(){ return document.querySelector('input[name="ptype"]:checked').value; }
+
+function syncPostFormVisibility(){
+  const t = currentPostType();
+  document.getElementById("fields_currency").classList.toggle("d-none", t !== "currency");
+  document.getElementById("fields_item").classList.toggle("d-none", t === "currency");
+  document.getElementById("fields_price").classList.toggle("d-none", t === "currency");
+  document.getElementById("priceLabel").textContent = t === "trade" ? "Service fee (optional)" : "Price";
+}
+typeRadios.forEach(r => r.addEventListener("change", syncPostFormVisibility));
+
+document.getElementById("tripMode").addEventListener("change", (e) => {
+  const mode = e.target.value;
+  document.getElementById("tripFields").classList.toggle("d-none", mode === "none");
+  document.getElementById("tripCityLabel").textContent = mode === "request" ? "Requesting from (city)" : "Layover city";
+  document.getElementById("tripDateLabel").textContent = mode === "request" ? "Needed by" : "Layover date";
+});
+
+function openPostModal(presetType){
+  if (presetType){
+    document.getElementById("pt_"+presetType).checked = true;
+    syncPostFormVisibility();
+  }
+  new bootstrap.Modal(document.getElementById("postModal")).show();
+}
+
+document.getElementById("submitPost").addEventListener("click", () => {
+  const type = currentPostType();
+  const anonymous = document.getElementById("postAnon").checked;
+  const posterName = document.getElementById("posterName").value.trim();
+  const tripMode = document.getElementById("tripMode").value;
+
+  if (type !== "currency" && !document.getElementById("itemTitle").value.trim()){
+    document.getElementById("itemTitle").focus(); return;
+  }
+  if (type === "currency" && !document.getElementById("curAmount").value){
+    document.getElementById("curAmount").focus(); return;
+  }
+
+  const trip = tripMode === "none" ? { mode:"none" } : {
+    mode: tripMode,
+    city: document.getElementById("tripCity").value.trim(),
+    date: document.getElementById("tripDate").value,
+    note: document.getElementById("tripNote").value.trim(),
+  };
+
+  let listing;
+  if (type === "currency"){
+    const dir = document.getElementById("curDirection").value;
+    const amount = parseFloat(document.getElementById("curAmount").value || "0");
+    const open = document.getElementById("curOpen").checked;
+    const rate = open ? null : parseFloat(document.getElementById("curRate").value || "0") || null;
+    listing = {
+      id: uid(), type:"currency",
+      title: `${dir === "buy" ? "Buying" : "Selling"} $${amount} USD`,
+      description: document.getElementById("itemDesc").value.trim(),
+      price:null, curDirection:dir, curAmount:amount, curRate:rate, curOpen:open,
+      trip, posterName, anonymous,
+      contact:{ phone:document.getElementById("posterPhone").value.trim(), email:document.getElementById("posterEmail").value.trim() },
+      createdAt: Date.now(), messages:[], dealAgreed:false, bids:[]
+    };
+  } else {
+    const priceVal = document.getElementById("itemPrice").value;
+    listing = {
+      id: uid(), type,
+      title: document.getElementById("itemTitle").value.trim(),
+      description: document.getElementById("itemDesc").value.trim(),
+      price: priceVal ? { amount: parseFloat(priceVal), currency: document.getElementById("itemCurrency").value } : null,
+      trip, posterName, anonymous,
+      contact:{ phone:document.getElementById("posterPhone").value.trim(), email:document.getElementById("posterEmail").value.trim() },
+      createdAt: Date.now(), messages:[], dealAgreed:false, bids:[]
+    };
+  }
+
+  state.listings.unshift(listing);
+  saveState();
+  renderAll();
+  document.getElementById("postForm").reset();
+  syncPostFormVisibility();
+  document.getElementById("tripFields").classList.add("d-none");
+  bootstrap.Modal.getInstance(document.getElementById("postModal")).hide();
+});
+
+/* ------------------------------ Bidding ------------------------------ */
+function openBidModal(listingId){
+  activeBidListingId = listingId;
+  const l = state.listings.find(x=>x.id===listingId);
+  document.getElementById("bidModalTitle").textContent = `Bid on: ${l.title}`;
+  document.getElementById("bidRate").value = "";
+  document.getElementById("bidNote").value = "";
+  document.getElementById("bidAnon").checked = false;
+  new bootstrap.Modal(document.getElementById("bidModal")).show();
+}
+
+document.getElementById("submitBid").addEventListener("click", () => {
+  const l = state.listings.find(x=>x.id===activeBidListingId);
+  if (!l) return;
+  const rate = parseFloat(document.getElementById("bidRate").value || "0");
+  if (!rate) { document.getElementById("bidRate").focus(); return; }
+  const anon = document.getElementById("bidAnon").checked;
+  l.bids.push({
+    id: uid(),
+    bidderName: anon ? "Anonymous crew" : (myName || "Crew member"),
+    anonymous: anon,
+    rate,
+    note: document.getElementById("bidNote").value.trim(),
+    ts: Date.now(),
+    accepted:false
+  });
+  saveState();
+  renderAll();
+  bootstrap.Modal.getInstance(document.getElementById("bidModal")).hide();
+});
+
+/* ------------------------------ Chat ------------------------------ */
+function openChat(listingId, aboutBidId){
+  activeChatListingId = listingId;
+  const l = state.listings.find(x=>x.id===listingId);
+  document.getElementById("chatTitle").textContent = l.title;
+  document.getElementById("chatSubtitle").textContent = l.anonymous ? "with Anonymous crew" : `with ${l.posterName || "crew member"}`;
+
+  if (aboutBidId && (!l.messages.length)){
+    const bid = l.bids.find(b=>b.id===aboutBidId);
+    if (bid){
+      l.messages.push({ from:"system", text:`Chat started about a bid of ${bid.rate.toFixed(2)} ETB/$1.`, ts: Date.now() });
+    }
+  }
+  renderChatMessages(l);
+  renderChatContactBox(l);
+  new bootstrap.Offcanvas(document.getElementById("chatPanel")).show();
+}
+
+function renderChatContactBox(l){
+  const box = document.getElementById("chatContactBox");
+  if (l.dealAgreed){
+    const c = l.contact || {};
+    box.innerHTML = `<div class="contact-revealed"><i class="bi bi-unlock me-1"></i>Deal agreed — contact revealed:
+      ${c.phone ? `<div class="mt-1"><i class="bi bi-telephone"></i> ${esc(c.phone)}</div>` : ""}
+      ${c.email ? `<div><i class="bi bi-envelope"></i> ${esc(c.email)}</div>` : ""}
+      ${(!c.phone && !c.email) ? `<div class="mt-1">Poster didn't leave contact details — keep coordinating here.</div>` : ""}
+    </div>`;
+  } else {
+    box.innerHTML = `<div class="contact-locked"><i class="bi bi-lock me-1"></i>Contact details stay hidden until a deal is marked agreed.</div>`;
+  }
+}
+
+function renderChatMessages(l){
+  const el = document.getElementById("chatMessages");
+  if (!l.messages.length){
+    el.innerHTML = `<div class="text-secondary small text-center my-3">No messages yet — say hello.</div>`;
+    return;
+  }
+  el.innerHTML = l.messages.map(m => {
+    if (m.from === "system"){
+      return `<div class="text-secondary small text-center my-1">${esc(m.text)}</div>`;
+    }
+    const mine = m.from === "me";
+    return `<div class="chat-msg ${mine?"mine":"theirs"}">${esc(m.text)}<div class="chat-meta">${timeAgo(m.ts)}</div></div>`;
+  }).join("");
+  el.scrollTop = el.scrollHeight;
+}
+
+document.getElementById("chatSendBtn").addEventListener("click", sendChatMessage);
+document.getElementById("chatInput").addEventListener("keydown", (e) => { if (e.key==="Enter") sendChatMessage(); });
+
+function sendChatMessage(){
+  const l = state.listings.find(x=>x.id===activeChatListingId);
+  if (!l) return;
+  const input = document.getElementById("chatInput");
+  const text = input.value.trim();
+  if (!text) return;
+  l.messages.push({ from:"me", text, ts: Date.now() });
+  input.value = "";
+  saveState();
+  renderChatMessages(l);
+}
+
+document.getElementById("markDealBtn").addEventListener("click", () => {
+  const l = state.listings.find(x=>x.id===activeChatListingId);
+  if (!l) return;
+  l.dealAgreed = true;
+  l.messages.push({ from:"system", text:"Deal marked as agreed. Contact details are now visible to both sides in this chat.", ts: Date.now() });
+  saveState();
+  renderChatMessages(l);
+  renderChatContactBox(l);
+});
+
+/* ------------------------------ Init ------------------------------ */
+refreshIdentityPill();
+renderAll();
+</script>
+</body>
+</html>
