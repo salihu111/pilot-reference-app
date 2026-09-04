@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import sqlite3
 import threading
+import time
 from datetime import datetime, timezone
 
 from .db import get_conn
@@ -29,106 +30,171 @@ def _clean(value, max_len=4000):
     return value[:max_len] if value else None
 
 
-def _ensure_schema():
-    """Create marketplace tables once, not once per request.
+def _with_retry(fn, attempts=8, base_delay=0.15):
+    """Run a DB operation and retry transient SQLite writer contention."""
+    last = None
+    for attempt in range(attempts):
+        try:
+            return fn()
+        except sqlite3.OperationalError as exc:
+            last = exc
+            if "locked" not in str(exc).lower() and "busy" not in str(exc).lower():
+                raise
+            if attempt == attempts - 1:
+                raise
+            time.sleep(base_delay * (attempt + 1))
+    raise last
 
-    The old implementation executed CREATE TABLE/CREATE INDEX + COMMIT on every
-    listing/chat call. Under Telegram polling + FastAPI + background indexing,
-    that pattern can create unnecessary SQLite writer contention.
-    """
+
+def retry_sqlite(fn):
+    """Retry a complete marketplace operation on transient SQLite lock/busy errors."""
+    def wrapped(*args, **kwargs):
+        return _with_retry(lambda: fn(*args, **kwargs), attempts=6, base_delay=0.2)
+    wrapped.__name__ = getattr(fn, '__name__', 'wrapped')
+    wrapped.__doc__ = fn.__doc__
+    return wrapped
+
+
+def _ensure_schema():
+    """Create/migrate marketplace tables once and seed visible demo posts."""
     global _schema_ready
     if _schema_ready:
         return
     with _schema_lock:
         if _schema_ready:
             return
+        def setup():
+            conn = get_conn()
+            try:
+                conn.executescript("""
+                CREATE TABLE IF NOT EXISTS marketplace_listings (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    type TEXT NOT NULL CHECK(type IN ('buy','sell','currency','trip','service')),
+                    title TEXT NOT NULL,
+                    description TEXT,
+                    owner_client_id TEXT NOT NULL,
+                    price_amount REAL,
+                    price_currency TEXT,
+                    cur_direction TEXT,
+                    cur_amount REAL,
+                    cur_rate REAL,
+                    cur_open INTEGER NOT NULL DEFAULT 0,
+                    trip_mode TEXT DEFAULT 'none',
+                    trip_city TEXT,
+                    trip_date TEXT,
+                    trip_note TEXT,
+                    poster_name TEXT,
+                    anonymous INTEGER NOT NULL DEFAULT 0,
+                    contact_phone TEXT,
+                    contact_email TEXT,
+                    item_mode TEXT DEFAULT 'sell',
+                    amazon_url TEXT,
+                    is_demo INTEGER NOT NULL DEFAULT 0,
+                    status TEXT NOT NULL DEFAULT 'active',
+                    created_at TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_marketplace_listings_status_created
+                    ON marketplace_listings(status, created_at DESC);
+                CREATE INDEX IF NOT EXISTS idx_marketplace_listings_type
+                    ON marketplace_listings(type);
+                CREATE INDEX IF NOT EXISTS idx_marketplace_listings_city
+                    ON marketplace_listings(trip_city);
+
+                CREATE TABLE IF NOT EXISTS marketplace_bids (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    listing_id INTEGER NOT NULL,
+                    bidder_client_id TEXT NOT NULL,
+                    rate REAL NOT NULL,
+                    bidder_name TEXT,
+                    anonymous INTEGER NOT NULL DEFAULT 0,
+                    note TEXT,
+                    contact_phone TEXT,
+                    contact_email TEXT,
+                    status TEXT NOT NULL DEFAULT 'pending',
+                    created_at TEXT NOT NULL,
+                    FOREIGN KEY(listing_id) REFERENCES marketplace_listings(id) ON DELETE CASCADE
+                );
+                CREATE INDEX IF NOT EXISTS idx_marketplace_bids_listing_rate
+                    ON marketplace_bids(listing_id, rate DESC, created_at ASC);
+
+                CREATE TABLE IF NOT EXISTS marketplace_threads (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    listing_id INTEGER NOT NULL,
+                    owner_client_id TEXT NOT NULL,
+                    counterpart_client_id TEXT NOT NULL,
+                    deal_agreed INTEGER NOT NULL DEFAULT 0,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    UNIQUE(listing_id, counterpart_client_id),
+                    FOREIGN KEY(listing_id) REFERENCES marketplace_listings(id) ON DELETE CASCADE
+                );
+                CREATE INDEX IF NOT EXISTS idx_marketplace_threads_listing
+                    ON marketplace_threads(listing_id, updated_at DESC);
+
+                CREATE TABLE IF NOT EXISTS marketplace_messages (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    thread_id INTEGER NOT NULL,
+                    sender_client_id TEXT NOT NULL,
+                    text TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    FOREIGN KEY(thread_id) REFERENCES marketplace_threads(id) ON DELETE CASCADE
+                );
+                CREATE INDEX IF NOT EXISTS idx_marketplace_messages_thread
+                    ON marketplace_messages(thread_id, created_at);
+                """)
+                cols = {r[1] for r in conn.execute("PRAGMA table_info(marketplace_listings)").fetchall()}
+                if "item_mode" not in cols:
+                    conn.execute("ALTER TABLE marketplace_listings ADD COLUMN item_mode TEXT DEFAULT 'sell'")
+                if "amazon_url" not in cols:
+                    conn.execute("ALTER TABLE marketplace_listings ADD COLUMN amazon_url TEXT")
+                if "is_demo" not in cols:
+                    conn.execute("ALTER TABLE marketplace_listings ADD COLUMN is_demo INTEGER NOT NULL DEFAULT 0")
+                bcols = {r[1] for r in conn.execute("PRAGMA table_info(marketplace_bids)").fetchall()}
+                if "contact_phone" not in bcols:
+                    conn.execute("ALTER TABLE marketplace_bids ADD COLUMN contact_phone TEXT")
+                if "contact_email" not in bcols:
+                    conn.execute("ALTER TABLE marketplace_bids ADD COLUMN contact_email TEXT")
+                conn.commit()
+            finally:
+                conn.close()
+        _with_retry(setup)
+        _schema_ready = True
+        _seed_demo_listings()
+
+
+def _seed_demo_listings():
+    """Seed examples only when this database has no demo posts."""
+    def seed():
         conn = get_conn()
         try:
-            conn.executescript("""
-            CREATE TABLE IF NOT EXISTS marketplace_listings (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                type TEXT NOT NULL CHECK(type IN ('buy','sell','currency','trip','service')),
-                title TEXT NOT NULL,
-                description TEXT,
-                owner_client_id TEXT NOT NULL,
-                price_amount REAL,
-                price_currency TEXT,
-                cur_direction TEXT,
-                cur_amount REAL,
-                cur_rate REAL,
-                cur_open INTEGER NOT NULL DEFAULT 0,
-                trip_mode TEXT DEFAULT 'none',
-                trip_city TEXT,
-                trip_date TEXT,
-                trip_note TEXT,
-                poster_name TEXT,
-                anonymous INTEGER NOT NULL DEFAULT 0,
-                contact_phone TEXT,
-                contact_email TEXT,
-                item_mode TEXT DEFAULT 'sell',
-                amazon_url TEXT,
-                status TEXT NOT NULL DEFAULT 'active',
-                created_at TEXT NOT NULL
-            );
-            CREATE INDEX IF NOT EXISTS idx_marketplace_listings_status_created
-                ON marketplace_listings(status, created_at DESC);
-            CREATE INDEX IF NOT EXISTS idx_marketplace_listings_type
-                ON marketplace_listings(type);
-            CREATE INDEX IF NOT EXISTS idx_marketplace_listings_city
-                ON marketplace_listings(trip_city);
-
-            CREATE TABLE IF NOT EXISTS marketplace_bids (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                listing_id INTEGER NOT NULL,
-                bidder_client_id TEXT NOT NULL,
-                rate REAL NOT NULL,
-                bidder_name TEXT,
-                anonymous INTEGER NOT NULL DEFAULT 0,
-                note TEXT,
-                status TEXT NOT NULL DEFAULT 'pending',
-                created_at TEXT NOT NULL,
-                FOREIGN KEY(listing_id) REFERENCES marketplace_listings(id) ON DELETE CASCADE
-            );
-            CREATE INDEX IF NOT EXISTS idx_marketplace_bids_listing_rate
-                ON marketplace_bids(listing_id, rate DESC, created_at ASC);
-
-            CREATE TABLE IF NOT EXISTS marketplace_threads (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                listing_id INTEGER NOT NULL,
-                owner_client_id TEXT NOT NULL,
-                counterpart_client_id TEXT NOT NULL,
-                deal_agreed INTEGER NOT NULL DEFAULT 0,
-                created_at TEXT NOT NULL,
-                updated_at TEXT NOT NULL,
-                UNIQUE(listing_id, counterpart_client_id),
-                FOREIGN KEY(listing_id) REFERENCES marketplace_listings(id) ON DELETE CASCADE
-            );
-            CREATE INDEX IF NOT EXISTS idx_marketplace_threads_listing
-                ON marketplace_threads(listing_id, updated_at DESC);
-
-            CREATE TABLE IF NOT EXISTS marketplace_messages (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                thread_id INTEGER NOT NULL,
-                sender_client_id TEXT NOT NULL,
-                text TEXT NOT NULL,
-                created_at TEXT NOT NULL,
-                FOREIGN KEY(thread_id) REFERENCES marketplace_threads(id) ON DELETE CASCADE
-            );
-            CREATE INDEX IF NOT EXISTS idx_marketplace_messages_thread
-                ON marketplace_messages(thread_id, created_at);
-            """)
-            # Safe migrations for databases created by older versions.
-            cols = {r[1] for r in conn.execute("PRAGMA table_info(marketplace_listings)").fetchall()}
-            if "item_mode" not in cols:
-                conn.execute("ALTER TABLE marketplace_listings ADD COLUMN item_mode TEXT DEFAULT 'sell'")
-            if "amazon_url" not in cols:
-                conn.execute("ALTER TABLE marketplace_listings ADD COLUMN amazon_url TEXT")
+            exists = conn.execute("SELECT 1 FROM marketplace_listings WHERE is_demo=1 LIMIT 1").fetchone()
+            if exists:
+                return
+            now = _now()
+            samples = [
+                ('currency','USD available in Addis','Selling USD cash in Addis. Named rate shown; crew can still make offers.','demo:currency:1',None,None,'sell',1200,155,1,'none',None,None,None,'Crew Market example',1,None,None,'sell',None,1,'active',now),
+                ('currency','Looking for USD before my trip','Buying USD for an upcoming trip. Best rate wins the conversation.','demo:currency:2',None,None,'buy',800,154,1,'none',None,None,None,'Crew Market example',1,None,None,'sell',None,1,'active',now),
+                ('sell','Boeing 737 headset case','Good condition, useful for line flying. Handover in Addis.','demo:item:sell:1',1200,'ETB',None,None,None,0,'none','Addis Ababa',None,None,'Crew Market example',1,None,None,'sell',None,1,'active',now),
+                ('sell','Universal travel adapter','Compact adapter, barely used. Happy to swap for a new USB-C charger.','demo:item:sell:2',900,'ETB',None,None,None,0,'none','Addis Ababa',None,None,'Crew Market example',1,None,None,'swap',None,1,'active',now),
+                ('buy','Looking for compact power bank','Need a reliable 10,000–20,000 mAh power bank before my next rotation.','demo:item:buy:1',None,None,None,None,None,0,'none','Addis Ababa',None,None,'Crew Market example',1,None,None,'sell',None,1,'active',now),
+                ('buy','Need iPhone charging cable in Mumbai','USB-C cable needed at BOM before departure.','demo:item:buy:2',None,None,None,None,None,0,'none','Mumbai (BOM)','Sept 10',None,'Crew Market example',1,None,None,'sell',None,1,'active',now),
+                ('trip','Anyone with layover Mumbai (BOM) · Sept 10','I need a small crew item carried from Mumbai to Addis.','demo:trip:1',None,None,None,None,None,0,'none','Mumbai (BOM)','Sept 10','Can carry a small item back to Addis.','Crew Market example',1,None,None,'sell',None,1,'active',now),
+                ('trip','Layover Dubai (DXB) · Sept 14','Have this, tag my layover: happy to bring a small crew essential from DXB.','demo:trip:2',None,None,None,None,None,0,'none','Dubai (DXB)','Sept 14','Tag me if you need something from Dubai.','Crew Market example',1,None,None,'sell',None,1,'active',now),
+                ('service','Amazon run to London','I am flying to London and can bring a small Amazon order back.','demo:service:1',None,None,None,None,None,0,'none','London (LHR)','Sept 18',None,'Crew Market example',1,None,None,'sell','https://www.amazon.co.uk/',1,'active',now),
+                ('service','Amazon run to Dubai','Taking one small Amazon order on my next DXB rotation.','demo:service:2',None,None,None,None,None,0,'none','Dubai (DXB)','Sept 20',None,'Crew Market example',1,None,None,'sell','https://www.amazon.ae/',1,'active',now),
+            ]
+            conn.executemany("""INSERT INTO marketplace_listings
+                (type,title,description,owner_client_id,price_amount,price_currency,
+                 cur_direction,cur_amount,cur_rate,cur_open,trip_mode,trip_city,trip_date,
+                 trip_note,poster_name,anonymous,contact_phone,contact_email,item_mode,amazon_url,is_demo,status,created_at)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""", samples)
             conn.commit()
-            _schema_ready = True
         finally:
             conn.close()
+    _with_retry(seed)
 
 
+@retry_sqlite
 def create_listing(*, type: str, title: str, description: str = None,
                    owner_client_id: str, price_amount: float = None,
                    price_currency: str = None, cur_direction: str = None,
@@ -154,27 +220,31 @@ def create_listing(*, type: str, title: str, description: str = None,
             raise ValueError("Currency amount must be greater than zero.")
         if cur_rate not in (None, '') and float(cur_rate) <= 0:
             raise ValueError("Currency rate must be greater than zero.")
-    conn = get_conn()
-    try:
-        cur = conn.execute("""
-            INSERT INTO marketplace_listings
-            (type,title,description,owner_client_id,price_amount,price_currency,
-             cur_direction,cur_amount,cur_rate,cur_open,trip_mode,trip_city,trip_date,
-             trip_note,poster_name,anonymous,contact_phone,contact_email,item_mode,amazon_url,status,created_at)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-        """, (kind,title,_clean(description),owner,price_amount,_clean(price_currency,12),
-              _clean(cur_direction,30),cur_amount,cur_rate,1 if cur_open else 0,
-              _clean(trip_mode,30) or 'none',_clean(trip_city,120),_clean(trip_date,40),
-              _clean(trip_note,1000),_clean(poster_name,120),1 if anonymous else 0,
-              _clean(contact_phone,80),_clean(contact_email,180),
-              _clean(item_mode,30) or 'sell',_clean(amazon_url,1000),
-              'active',_now()))
-        conn.commit()
-        return int(cur.lastrowid)
-    finally:
-        conn.close()
+
+    def write():
+        conn = get_conn()
+        try:
+            cur = conn.execute("""
+                INSERT INTO marketplace_listings
+                (type,title,description,owner_client_id,price_amount,price_currency,
+                 cur_direction,cur_amount,cur_rate,cur_open,trip_mode,trip_city,trip_date,
+                 trip_note,poster_name,anonymous,contact_phone,contact_email,item_mode,amazon_url,is_demo,status,created_at)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            """, (kind,title,_clean(description),owner,price_amount,_clean(price_currency,12),
+                  _clean(cur_direction,30),cur_amount,cur_rate,1 if cur_open else 0,
+                  _clean(trip_mode,30) or 'none',_clean(trip_city,120),_clean(trip_date,40),
+                  _clean(trip_note,1000),_clean(poster_name,120),1 if anonymous else 0,
+                  _clean(contact_phone,80),_clean(contact_email,180),
+                  _clean(item_mode,30) or 'sell',_clean(amazon_url,1000),0,
+                  'active',_now()))
+            conn.commit()
+            return int(cur.lastrowid)
+        finally:
+            conn.close()
+    return _with_retry(write)
 
 
+@retry_sqlite
 def list_listings(*, type: str = None, city: str = None, query: str = None,
                   viewer_client_id: str = None):
     _ensure_schema()
@@ -206,12 +276,13 @@ def list_listings(*, type: str = None, city: str = None, query: str = None,
             item['is_owner']=bool(viewer_client_id and row['owner_client_id']==viewer_client_id)
             if not item['is_owner']:
                 item['contact_phone']=None; item['contact_email']=None
-            item['anonymous']=bool(item['anonymous']); item['cur_open']=bool(item['cur_open'])
+            item['anonymous']=bool(item['anonymous']); item['cur_open']=bool(item['cur_open']); item['is_demo']=bool(item.get('is_demo',0))
             out.append(item)
         return out
     finally: conn.close()
 
 
+@retry_sqlite
 def list_bids(listing_id: int, viewer_client_id: str = None):
     _ensure_schema()
     conn=get_conn()
@@ -233,6 +304,7 @@ def list_bids(listing_id: int, viewer_client_id: str = None):
     finally: conn.close()
 
 
+@retry_sqlite
 def place_bid(listing_id: int, *, bidder_client_id: str, rate: float,
               bidder_name: str = None, anonymous: bool = False, note: str = None,
               contact_phone: str = None, contact_email: str = None) -> int:
@@ -249,8 +321,8 @@ def place_bid(listing_id: int, *, bidder_client_id: str, rate: float,
         if listing['status']!='active': raise ValueError('This listing is no longer active.')
         if listing['owner_client_id']==bidder: raise ValueError('You cannot bid on your own listing.')
         cur=conn.execute("""INSERT INTO marketplace_bids
-          (listing_id,bidder_client_id,rate,bidder_name,anonymous,note,status,created_at)
-          VALUES (?,?,?,?,?,?,?,?)""",(listing_id,bidder,rate_value,_clean(bidder_name,120),1 if anonymous else 0,_clean(note,1000),'pending',_now()))
+          (listing_id,bidder_client_id,rate,bidder_name,anonymous,note,contact_phone,contact_email,status,created_at)
+          VALUES (?,?,?,?,?,?,?,?,?,?)""",(listing_id,bidder,rate_value,_clean(bidder_name,120),1 if anonymous else 0,_clean(note,1000),_clean(contact_phone,80),_clean(contact_email,180),'pending',_now()))
         conn.commit(); return int(cur.lastrowid)
     finally: conn.close()
 
@@ -275,6 +347,7 @@ def _thread_payload(conn,row,include_messages=True):
     return payload
 
 
+@retry_sqlite
 def get_or_create_thread_for_viewer(listing_id:int,client_id:str):
     _ensure_schema(); client_id=_clean(client_id,160)
     if not client_id: raise ValueError('A client id is required.')
@@ -292,6 +365,7 @@ def get_or_create_thread_for_viewer(listing_id:int,client_id:str):
     finally: conn.close()
 
 
+@retry_sqlite
 def get_or_create_thread_with(listing_id:int,*,owner_client_id:str,counterpart_client_id:str):
     _ensure_schema(); owner=_clean(owner_client_id,160); counterpart=_clean(counterpart_client_id,160)
     conn=get_conn()
@@ -306,6 +380,7 @@ def get_or_create_thread_with(listing_id:int,*,owner_client_id:str,counterpart_c
     finally: conn.close()
 
 
+@retry_sqlite
 def list_threads_for_listing(listing_id:int,owner_client_id:str):
     _ensure_schema(); conn=get_conn()
     try:
@@ -317,6 +392,7 @@ def list_threads_for_listing(listing_id:int,owner_client_id:str):
     finally: conn.close()
 
 
+@retry_sqlite
 def get_thread(thread_id:int,client_id:str):
     _ensure_schema(); conn=get_conn()
     try:
@@ -327,6 +403,7 @@ def get_thread(thread_id:int,client_id:str):
     finally: conn.close()
 
 
+@retry_sqlite
 def add_message(thread_id:int,client_id:str,text:str):
     _ensure_schema(); client=_clean(client_id,160); message=_clean(text,3000)
     if not client: raise ValueError('A client id is required.')
@@ -341,6 +418,7 @@ def add_message(thread_id:int,client_id:str,text:str):
     finally: conn.close()
 
 
+@retry_sqlite
 def mark_deal_agreed(thread_id:int,client_id:str):
     _ensure_schema(); conn=get_conn()
     try:
