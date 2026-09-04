@@ -65,6 +65,8 @@ def _ensure_schema():
                 anonymous INTEGER NOT NULL DEFAULT 0,
                 contact_phone TEXT,
                 contact_email TEXT,
+                item_mode TEXT DEFAULT 'sell',
+                amazon_url TEXT,
                 status TEXT NOT NULL DEFAULT 'active',
                 created_at TEXT NOT NULL
             );
@@ -115,6 +117,12 @@ def _ensure_schema():
             CREATE INDEX IF NOT EXISTS idx_marketplace_messages_thread
                 ON marketplace_messages(thread_id, created_at);
             """)
+            # Safe migrations for databases created by older versions.
+            cols = {r[1] for r in conn.execute("PRAGMA table_info(marketplace_listings)").fetchall()}
+            if "item_mode" not in cols:
+                conn.execute("ALTER TABLE marketplace_listings ADD COLUMN item_mode TEXT DEFAULT 'sell'")
+            if "amazon_url" not in cols:
+                conn.execute("ALTER TABLE marketplace_listings ADD COLUMN amazon_url TEXT")
             conn.commit()
             _schema_ready = True
         finally:
@@ -129,7 +137,8 @@ def create_listing(*, type: str, title: str, description: str = None,
                    trip_city: str = None, trip_date: str = None,
                    trip_note: str = None, poster_name: str = None,
                    anonymous: bool = False, contact_phone: str = None,
-                   contact_email: str = None) -> int:
+                   contact_email: str = None, item_mode: str = "sell",
+                   amazon_url: str = None) -> int:
     _ensure_schema()
     kind = (_clean(type, 30) or '').lower()
     if kind not in {"buy", "sell", "currency", "trip", "service"}:
@@ -151,13 +160,15 @@ def create_listing(*, type: str, title: str, description: str = None,
             INSERT INTO marketplace_listings
             (type,title,description,owner_client_id,price_amount,price_currency,
              cur_direction,cur_amount,cur_rate,cur_open,trip_mode,trip_city,trip_date,
-             trip_note,poster_name,anonymous,contact_phone,contact_email,status,created_at)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+             trip_note,poster_name,anonymous,contact_phone,contact_email,item_mode,amazon_url,status,created_at)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
         """, (kind,title,_clean(description),owner,price_amount,_clean(price_currency,12),
               _clean(cur_direction,30),cur_amount,cur_rate,1 if cur_open else 0,
               _clean(trip_mode,30) or 'none',_clean(trip_city,120),_clean(trip_date,40),
               _clean(trip_note,1000),_clean(poster_name,120),1 if anonymous else 0,
-              _clean(contact_phone,80),_clean(contact_email,180),'active',_now()))
+              _clean(contact_phone,80),_clean(contact_email,180),
+              _clean(item_mode,30) or 'sell',_clean(amazon_url,1000),
+              'active',_now()))
         conn.commit()
         return int(cur.lastrowid)
     finally:
@@ -223,7 +234,8 @@ def list_bids(listing_id: int, viewer_client_id: str = None):
 
 
 def place_bid(listing_id: int, *, bidder_client_id: str, rate: float,
-              bidder_name: str = None, anonymous: bool = False, note: str = None) -> int:
+              bidder_name: str = None, anonymous: bool = False, note: str = None,
+              contact_phone: str = None, contact_email: str = None) -> int:
     _ensure_schema()
     bidder=_clean(bidder_client_id,160)
     if not bidder: raise ValueError('A client id is required.')
