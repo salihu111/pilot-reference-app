@@ -17,6 +17,17 @@ button,input,textarea,select{font:inherit}input:focus,textarea:focus,select:focu
 ::-webkit-scrollbar{width:5px}::-webkit-scrollbar-thumb{background:#d8d3df;border-radius:99px}.fade{animation:fade .22s ease}@keyframes fade{from{opacity:0;transform:translateY(5px)}to{opacity:1;transform:none}}
 .hero-grid{background-image:radial-gradient(rgba(115,87,255,.13) 1px,transparent 1px);background-size:18px 18px}.nav-shadow{box-shadow:0 -12px 30px rgba(40,30,60,.08)}
 button{touch-action:manipulation;-webkit-tap-highlight-color:transparent}button:disabled{opacity:.55;pointer-events:none}
+
+/* Crew Market onboarding tutorial */
+.tour-backdrop{position:fixed;inset:0;z-index:200;background:rgba(12,10,20,.72);backdrop-filter:blur(7px);display:flex;align-items:center;justify-content:center;padding:18px}
+.tour-card{width:min(560px,100%);max-height:92vh;overflow:auto;background:#fff;border:1px solid #e5e1ec;border-radius:30px;box-shadow:0 30px 90px rgba(0,0,0,.28)}
+.tour-top{padding:22px 22px 10px}.tour-progress{height:5px;background:#ece9f2;border-radius:99px;overflow:hidden}.tour-progress>i{display:block;height:100%;background:#7357ff;border-radius:99px;transition:width .2s ease}
+.tour-icon{width:68px;height:68px;border-radius:22px;background:linear-gradient(135deg,#eeeaff,#fff1f6);display:grid;place-items:center;font-size:31px;margin:4px 0 15px}
+.tour-step{font-size:10px;font-weight:800;letter-spacing:.15em;color:#7357ff}.tour-en{font-family:"Space Grotesk",sans-serif;font-size:24px;font-weight:700;line-height:1.08;margin-top:7px}.tour-am{font-size:17px;font-weight:600;line-height:1.35;color:#4f4a59;margin-top:10px}.tour-copy{font-size:13px;line-height:1.5;color:#777383;margin-top:8px}
+.tour-actions{display:flex;gap:9px;padding:16px 22px 22px;border-top:1px solid #eeeaf2;position:sticky;bottom:0;background:rgba(255,255,255,.96);backdrop-filter:blur(8px)}
+.tour-btn{height:46px;border-radius:15px;padding:0 16px;font-size:13px;font-weight:800}.tour-skip{background:#f4f2f7;color:#65606e}.tour-next{background:#17151e;color:#fff;flex:1}.tour-check{display:flex;align-items:center;gap:7px;font-size:11px;color:#777383;margin-top:15px}
+@media(max-width:430px){.tour-card{border-radius:25px}.tour-en{font-size:22px}.tour-am{font-size:16px}}
+
 </style>
 </head>
 <body>
@@ -134,7 +145,60 @@ function contactReveal(t,p){const phone=t?.contact_phone;const email=t?.contact_
 async function agreeDeal(){if(!state.thread)return;const fd=new FormData();fd.append('client_id',state.clientId);try{const r=await apiFetch(`${API}/marketplace/threads/${state.thread.id}/agree`,{method:'POST',body:fd},12000);const d=await r.json();if(!r.ok)throw Error(d.detail||'Could not agree');const rr=await apiFetch(`${API}/marketplace/threads/${state.thread.id}?client_id=${encodeURIComponent(state.clientId)}`,{},9000);state.thread=await rr.json();render();toast('Deal agreed — contact details unlocked below.')}catch(e){toast(e.message)}}
 async function sendMessage(e){e.preventDefault();const el=document.getElementById('msg');const text=el?.value.trim();if(!text||!state.thread)return;const fd=new FormData();fd.append('client_id',state.clientId);fd.append('text',text);try{const r=await apiFetch(`${API}/marketplace/threads/${state.thread.id}/messages`,{method:'POST',body:fd},12000);if(!r.ok)throw Error();const rr=await apiFetch(`${API}/marketplace/threads/${state.thread.id}?client_id=${encodeURIComponent(state.clientId)}`,{},9000);state.thread=await rr.json();render();setTimeout(()=>document.getElementById('messages')?.scrollTo(0,99999),30)}catch(e){toast('Message failed.')}}
 function toast(text){const old=document.getElementById('toast');if(old)old.remove();const d=document.createElement('div');d.id='toast';d.className='fixed left-1/2 -translate-x-1/2 bottom-20 z-[100] bg-gray-950 text-white text-xs font-semibold px-4 py-3 rounded-xl shadow-xl';d.textContent=text;document.body.appendChild(d);setTimeout(()=>d.remove(),2600)}
+
+const TOUR_KEY='crew_market_tutorial_v1';
+const TOUR_STEPS=[
+  {icon:'＋',step:'STEP 1 / 7',en:'Start a new post',am:'አዲስ ፖስት ይጀምሩ',copy:'Tap the + button at the top or the round + button at the bottom. Choose what you want to post.'},
+  {icon:'🛍️',step:'STEP 2 / 7',en:'Choose the post type',am:'የፖስት አይነት ይምረጡ',copy:'Sell an item, request something, create a currency bid board, match a layover, or offer a service / Amazon run.'},
+  {icon:'✍️',step:'STEP 3 / 7',en:'Add the details',am:'ዝርዝሮቹን ያስገቡ',copy:'Add the title, description, city or layover, date, and your contact details. Your phone and email stay private.'},
+  {icon:'🕶️',step:'STEP 4 / 7',en:'Choose your privacy',am:'የግላዊነት አማራጭ ይምረጡ',copy:'Tick Anonymous crew if you do not want your public name shown. Your private contact is never displayed on the listing.'},
+  {icon:'💱',step:'STEP 5 / 7',en:'For USD: open the bid board',am:'ለUSD፦ የጨረታ ቦርዱን ይክፈቱ',copy:'Set your USD amount and rate, or allow offers. Crew can place bids and chat without seeing private contact details.'},
+  {icon:'💬',step:'STEP 6 / 7',en:'Chat and agree the deal',am:'በቻት ይወያዩ እና ስምምነቱን ያጠናቅቁ',copy:'Tap Chat on a post or bid. Keep the handover details in the thread. When both sides are ready, tap Mark deal agreed.'},
+  {icon:'🔐',step:'STEP 7 / 7',en:'Contact unlocks after agreement',am:'ስምምነት ከተደረገ በኋላ ግንኙነት ይከፈታል',copy:'After the deal is agreed, the private phone/email can be shown inside that thread only. Bid owners can also close bidding or archive the post.'}
+];
+function tutorialOverlay(i=0){
+  const s=TOUR_STEPS[i]||TOUR_STEPS[0];
+  const pct=Math.round(((i+1)/TOUR_STEPS.length)*100);
+  return `<div id="crewTour" class="tour-backdrop" role="dialog" aria-modal="true" aria-label="Crew Market tutorial">
+    <div class="tour-card">
+      <div class="tour-top">
+        <div class="tour-progress"><i style="width:${pct}%"></i></div>
+        <div class="tour-icon">${s.icon}</div>
+        <div class="tour-step">${s.step}</div>
+        <div class="tour-en">${s.en}</div>
+        <div class="tour-am">${s.am}</div>
+        <div class="tour-copy">${s.copy}</div>
+        <label class="tour-check"><input id="tourDontShow" type="checkbox"> Don't show this tutorial again</label>
+      </div>
+      <div class="tour-actions">
+        <button class="tour-btn tour-skip" onclick="skipTutorial()">Skip</button>
+        <button class="tour-btn tour-next" onclick="nextTutorial(${i})">${i===TOUR_STEPS.length-1?'Start using Crew Market':'Next →'}</button>
+      </div>
+    </div>
+  </div>`;
+}
+function showTutorial(force=false){
+  if(!force && localStorage.getItem(TOUR_KEY)==='done') return;
+  if(document.getElementById('crewTour')) return;
+  document.body.insertAdjacentHTML('beforeend',tutorialOverlay(0));
+}
+function nextTutorial(i){
+  const dont=document.getElementById('tourDontShow')?.checked;
+  if(i>=TOUR_STEPS.length-1){if(dont)localStorage.setItem(TOUR_KEY,'done');else localStorage.setItem(TOUR_KEY,'done');document.getElementById('crewTour')?.remove();return;}
+  document.getElementById('crewTour')?.remove();
+  document.body.insertAdjacentHTML('beforeend',tutorialOverlay(i+1));
+}
+function skipTutorial(){
+  localStorage.setItem(TOUR_KEY,'done');
+  document.getElementById('crewTour')?.remove();
+}
+function replayTutorial(){
+  localStorage.removeItem(TOUR_KEY);
+  showTutorial(true);
+}
+
 render();loadListings();
+setTimeout(()=>showTutorial(false),700);
 </script>
 </body>
 </html>
