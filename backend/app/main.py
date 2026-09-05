@@ -23,6 +23,7 @@ from .marketplace import (
     create_listing, list_listings, list_bids, place_bid,
     get_or_create_thread_for_viewer, get_or_create_thread_with,
     list_threads_for_listing, get_thread, add_message, mark_deal_agreed,
+    get_listing_info, close_listing, archive_listing,
     _ensure_schema as ensure_marketplace_schema,
 )
 
@@ -58,6 +59,26 @@ if _webapp_url_raw:
     WEBAPP_URL = _webapp_url_raw if _webapp_url_raw.startswith("http") else f"https://{_webapp_url_raw}"
 
 telegram_app = None
+telegram_loop = None
+
+def _notify_client(client_id: str, text: str):
+    """Send a best-effort private Telegram notification for tg:<user_id> clients."""
+    global telegram_app, telegram_loop
+    if not telegram_app or not telegram_loop or not client_id:
+        return
+    if not str(client_id).startswith("tg:"):
+        return
+    try:
+        chat_id = int(str(client_id).split(":", 1)[1])
+        import asyncio as _asyncio
+        fut = _asyncio.run_coroutine_threadsafe(
+            telegram_app.bot.send_message(chat_id=chat_id, text=text),
+            telegram_loop,
+        )
+        fut.add_done_callback(lambda f: f.exception() if not f.cancelled() else None)
+    except Exception as exc:
+        print(f"Marketplace notification skipped: {exc}")
+
 
 
 async def start_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -171,6 +192,8 @@ def seed_all_blocking():
 
 @app.on_event("startup")
 async def startup():
+    global telegram_loop
+    telegram_loop = asyncio.get_running_loop()
     # Initialize all SQLite schemas before accepting Telegram/API traffic.
     # Marketplace schema creation must never happen inside a normal GET/POST.
     init_db()
@@ -408,6 +431,7 @@ def post_marketplace_listing(
         )
     except ValueError as e:
         raise HTTPException(400, str(e))
+    _notify_client(client_id, f"🛍️ Crew Market\nYour post is live: {title or type}.\nOpen Crew Market to manage it.")
     return {"id": listing_id}
 
 
@@ -439,6 +463,9 @@ def post_marketplace_bid(
         )
     except ValueError as e:
         raise HTTPException(400, str(e))
+    info = get_listing_info(listing_id)
+    _notify_client(info["owner_client_id"], f"💰 New Crew Market bid\n{info['title']}\nOffer: {rate:g} ETB/USD\nOpen the bid board to review and chat.")
+    _notify_client(client_id, f"💰 Bid placed\n{info['title']}\nYour offer: {rate:g} ETB/USD")
     return {"id": bid_id}
 
 
@@ -495,7 +522,36 @@ def post_marketplace_message(thread_id: int, client_id: str = Form(...), text: s
 @app.post("/api/marketplace/threads/{thread_id}/agree")
 def post_marketplace_agree(thread_id: int, client_id: str = Form(...)):
     try:
-        return mark_deal_agreed(thread_id, client_id)
+        result = mark_deal_agreed(thread_id, client_id)
+        thread = get_thread(thread_id, client_id)
+        listing = get_listing_info(thread["listing_id"])
+        _notify_client(thread["owner_client_id"], f"🤝 Deal agreed\n{listing['title']}\nThe deal has been marked agreed. Contact details are now unlocked in this thread.")
+        _notify_client(thread["counterpart_client_id"], f"🤝 Deal agreed\n{listing['title']}\nThe deal has been marked agreed. Contact details are now unlocked in this thread.")
+        return result
+    except PermissionError as e:
+        raise HTTPException(403, str(e))
+    except ValueError as e:
+        raise HTTPException(404, str(e))
+
+
+@app.post("/api/marketplace/listings/{listing_id}/close")
+def post_marketplace_close(listing_id: int, client_id: str = Form(...)):
+    try:
+        result = close_listing(listing_id, client_id)
+        info = get_listing_info(listing_id)
+        _notify_client(client_id, f"🔒 Bid board closed\n{info['title']}\nNo more bids can be placed on this listing.")
+        return result
+    except PermissionError as e:
+        raise HTTPException(403, str(e))
+    except ValueError as e:
+        raise HTTPException(404, str(e))
+
+
+@app.post("/api/marketplace/listings/{listing_id}/archive")
+def post_marketplace_archive(listing_id: int, client_id: str = Form(...)):
+    try:
+        result = archive_listing(listing_id, client_id)
+        return result
     except PermissionError as e:
         raise HTTPException(403, str(e))
     except ValueError as e:
